@@ -17,8 +17,10 @@ interface GlobalModalsProps {
   onCloseWebRecorder: () => void;
   
   isHardwareModalOpen: boolean;
-  hardwareConnectionState: 'idle' | 'searching' | 'connected' | 'syncing';
+  hardwareConnectionState: 'idle' | 'searching' | 'connected' | 'syncing' | 'disconnected';
   deviceFiles: HardwareFile[];
+  deviceStatus?: { battery: number; version: string }; // New prop
+  transferProgress?: number; // New prop
   onToggleHardwareFile: (id: string) => void;
   onSyncHardware: () => void;
   onCloseHardwareModal: () => void;
@@ -33,7 +35,7 @@ interface GlobalModalsProps {
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
   pendingFile, onConfirmUpload, onCancelUpload,
   isWebRecorderOpen, onSaveRecording, onCloseWebRecorder,
-  isHardwareModalOpen, hardwareConnectionState, deviceFiles, onToggleHardwareFile, onSyncHardware, onCloseHardwareModal,
+  isHardwareModalOpen, hardwareConnectionState, deviceFiles, deviceStatus, transferProgress, onToggleHardwareFile, onSyncHardware, onCloseHardwareModal,
   activeHomeTemplate, templateCategories, onSaveTemplate, onDeleteTemplate, onCloseTemplateModal
 }) => {
   return (
@@ -57,6 +59,8 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         <HardwareSyncModal 
           connectionState={hardwareConnectionState}
           files={deviceFiles}
+          deviceStatus={deviceStatus}
+          transferProgress={transferProgress}
           onToggleFile={onToggleHardwareFile}
           onSync={onSyncHardware}
           onClose={onCloseHardwareModal}

@@ -26,12 +26,14 @@ const App = () => {
     isModalOpen: isHardwareModalOpen,
     connectionState: hardwareConnectionState,
     deviceFiles,
+    deviceStatus,
+    transferProgress,
     openSyncModal,
     closeSyncModal,
     toggleFileSelection,
     handleSync
   } = useHardwareSync(
-    (file) => store.createMeeting(file),
+    (file) => store.createMeeting(file, 0, 0, 'hardware'),
     () => {
       store.setSelectedFolderId(null);
       store.setView('list');
@@ -63,7 +65,7 @@ const App = () => {
   };
 
   const handleSaveRecording = (file: File) => {
-    store.createMeeting(file);
+    store.createMeeting(file, 0, 0, 'recording');
     setIsWebRecorderOpen(false);
     store.setSelectedFolderId(null);
     store.setView('list');
@@ -128,6 +130,8 @@ const App = () => {
         isHardwareModalOpen={isHardwareModalOpen}
         hardwareConnectionState={hardwareConnectionState}
         deviceFiles={deviceFiles}
+        deviceStatus={deviceStatus}
+        transferProgress={transferProgress}
         onToggleHardwareFile={toggleFileSelection}
         onSyncHardware={handleSync}
         onCloseHardwareModal={closeSyncModal}

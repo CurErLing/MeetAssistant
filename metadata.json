@@ -2,6 +2,7 @@
   "name": "积木会议助手",
   "description": "一款专业的会议录音助手，具备自动转写、发言人区分、音频编辑和硬件集成支持功能。",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "bluetooth"
   ]
 }
