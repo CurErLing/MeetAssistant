@@ -1,83 +1,301 @@
 
-import React, { useState, useEffect } from 'react';
-import AuthenticatedApp from './AuthenticatedApp';
-import { LoginPage } from './components/views/auth/LoginPage';
-import { authService } from './services/authService';
-import { Loader2 } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { useAppStore } from './hooks/useAppStore';
+import { useHardwareSync } from './hooks/useHardwareSync';
+import { HomeView } from './components/views/home';
+import { MeetingListView } from './components/views/meeting-list';
+import { MeetingDetailView } from './components/views/meeting';
+import { ExternalShareView } from './components/views/external-share';
+import { VoiceprintManagerView } from './components/views/manager/VoiceprintManagerView';
+import { HotwordManagerView } from './components/views/manager/HotwordManagerView';
+import { TemplateManagerView } from './components/views/template';
+import { RecycleBinView } from './components/views/recycle-bin';
+import { GlobalModals } from './components/GlobalModals';
+import { MainLayout } from './components/layout/MainLayout';
+import { ViewState } from './types';
 
 const App = () => {
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  const store = useAppStore();
+  
+  // Navigation State
+  const [navSource, setNavSource] = useState<'home' | 'sidebar'>('sidebar');
+  const [returnView, setReturnView] = useState<ViewState>('list');
 
-  // Define Guest User Object
-  const guestUser = {
-    id: '2025000001',
-    email: 'guest@mock.com',
-    user_metadata: {
-      full_name: '访客用户'
+  // Hardware Sync Hook
+  const {
+    isModalOpen: isHardwareModalOpen,
+    connectionState: hardwareConnectionState,
+    deviceFiles,
+    openSyncModal,
+    closeSyncModal,
+    toggleFileSelection,
+    handleSync
+  } = useHardwareSync(
+    (file) => store.createMeeting(file),
+    () => {
+      store.setSelectedFolderId(null);
+      store.setView('list');
+    }
+  );
+
+  // Local UI State
+  const [isWebRecorderOpen, setIsWebRecorderOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [targetTemplateId, setTargetTemplateId] = useState<string | null>(null);
+  const [homeSelectedTemplateId, setHomeSelectedTemplateId] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Handlers
+  const handleTriggerUpload = () => fileInputRef.current?.click();
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) setPendingFile(e.target.files[0]);
+    e.target.value = '';
+  };
+  
+  const handleConfirmUpload = (file: File, trimStart: number, trimEnd: number) => { 
+    if (file) { 
+      store.createMeeting(file, trimStart, trimEnd); 
+      setPendingFile(null);
+      store.setSelectedFolderId(null);
+      store.setView('list'); 
+    } 
+  };
+
+  const handleSaveRecording = (file: File) => {
+    store.createMeeting(file);
+    setIsWebRecorderOpen(false);
+    store.setSelectedFolderId(null);
+    store.setView('list');
+  };
+
+  const handleShareFolder = (folderId: string) => {
+    const folder = store.folders.find(f => f.id === folderId);
+    if (folder) {
+        const shareLink = `https://jimumeeting.ai/share/folder/${folderId}`;
+        navigator.clipboard.writeText(shareLink);
+        alert(`“${folder.name}”的分享链接已生成并复制到剪贴板！\n链接: ${shareLink}`);
     }
   };
 
-  useEffect(() => {
-    // 1. Check for existing session on mount
-    const initSession = async () => {
-      try {
-        const { data: { session } } = await authService.getSession();
-        if (session?.user) {
-          setUser(session.user);
-        } else {
-          setUser(null); // No session -> Show Login Page
-        }
-      } catch (e) {
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    initSession();
-
-    // 2. Listen for auth state changes (login/logout)
-    const { data: { subscription } } = authService.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        setUser(session.user);
-      } else if (!user || user.email !== guestUser.email) {
-        // Only reset to null if we are not already in explicit guest mode
-        // (This prevents auth state change from clearing guest mode unnecessarily)
-        setUser(null);
-      }
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const handleGuestLogin = () => {
-    setUser(guestUser);
-  };
-
-  const handleLogout = async () => {
-    try {
-      await authService.signOut();
-    } catch (e) {
-      console.error(e);
-    }
-    setUser(null);
-  };
-
-  if (loading) {
+  if (store.view === 'external-share' && store.activeMeeting) {
     return (
-      <div className="h-screen w-full flex items-center justify-center bg-slate-50">
-        <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
-      </div>
+      <ExternalShareView 
+        meeting={store.activeMeeting} 
+        templates={store.templates} 
+        onExit={() => {
+          store.setShareConfig(null);
+          store.setView('detail');
+        }} 
+        shareConfig={store.shareConfig}
+      />
     );
   }
 
-  if (!user) {
-    return <LoginPage onLoginSuccess={(session) => setUser(session.user)} onGuestLogin={handleGuestLogin} />;
-  }
+  // Filter Logic: Folder + Search
+  const filteredMeetings = store.meetings.filter(m => {
+    const matchFolder = store.selectedFolderId ? m.folderId === store.selectedFolderId : true;
+    const matchSearch = store.searchQuery 
+      ? m.name.toLowerCase().includes(store.searchQuery.toLowerCase()) 
+      : true;
+    return matchFolder && matchSearch;
+  });
+    
+  const meetingsToShow = [...filteredMeetings].sort((a, b) => 
+    b.uploadDate.getTime() - a.uploadDate.getTime()
+  );
 
-  return <AuthenticatedApp user={user} onLogout={handleLogout} />;
+  const currentFolderName = store.selectedFolderId 
+    ? store.folders.find(f => f.id === store.selectedFolderId)?.name 
+    : null;
+
+  const activeHomeTemplate = homeSelectedTemplateId ? store.templates.find(t => t.id === homeSelectedTemplateId) : null;
+  const TEMPLATE_CATEGORIES = ['通用', '会议', '演讲', '面试'];
+
+  return (
+    <>
+      <input type="file" ref={fileInputRef} className="hidden" accept=".wav,.mp3" onChange={handleFileInputChange} />
+      
+      <GlobalModals 
+        pendingFile={pendingFile}
+        onConfirmUpload={handleConfirmUpload}
+        onCancelUpload={() => setPendingFile(null)}
+        
+        isWebRecorderOpen={isWebRecorderOpen}
+        onSaveRecording={handleSaveRecording}
+        onCloseWebRecorder={() => setIsWebRecorderOpen(false)}
+        
+        isHardwareModalOpen={isHardwareModalOpen}
+        hardwareConnectionState={hardwareConnectionState}
+        deviceFiles={deviceFiles}
+        onToggleHardwareFile={toggleFileSelection}
+        onSyncHardware={handleSync}
+        onCloseHardwareModal={closeSyncModal}
+        
+        activeHomeTemplate={store.view === 'home' ? activeHomeTemplate : null}
+        templateCategories={TEMPLATE_CATEGORIES}
+        onSaveTemplate={store.updateTemplate}
+        onDeleteTemplate={(id) => {
+           store.deleteTemplate(id);
+           setHomeSelectedTemplateId(null);
+        }}
+        onCloseTemplateModal={() => setHomeSelectedTemplateId(null)}
+      />
+
+      <MainLayout
+        currentView={store.view} 
+        onChangeView={(view) => {
+          setTargetTemplateId(null);
+          store.setView(view);
+        }}
+        isHardwareConnecting={hardwareConnectionState === 'searching' || hardwareConnectionState === 'syncing'} 
+        onConnectHardware={openSyncModal}
+        meetingsCount={store.meetings.length}
+        deletedCount={store.deletedMeetings.length}
+        folders={store.folders}
+        onAddFolder={store.addFolder}
+        selectedFolderId={store.selectedFolderId}
+        onSelectFolder={(id) => {
+          store.setSelectedFolderId(id);
+          setNavSource('sidebar');
+        }}
+        onRenameFolder={store.updateFolder}
+        onDeleteFolder={store.deleteFolder}
+        onShareFolder={handleShareFolder}
+      >
+          {store.view === 'home' && (
+            <HomeView 
+              meetings={meetingsToShow} // Uses filtered list if search is active
+              folders={store.folders}
+              templates={store.templates} 
+              onSelectMeeting={(id) => {
+                setReturnView('home');
+                store.accessMeeting(id);
+              }}
+              onSelectFolder={(id) => { 
+                store.setSelectedFolderId(id); 
+                store.setView('list'); 
+                setNavSource('home');
+              }}
+              onSelectTemplate={setHomeSelectedTemplateId} 
+              onViewMoreMeetings={() => { 
+                store.setSelectedFolderId(null); 
+                store.setView('list'); 
+                setNavSource('home');
+              }}
+              onViewMoreTemplates={() => {
+                setTargetTemplateId(null);
+                store.setView('templates');
+              }}
+              onTriggerUpload={handleTriggerUpload}
+              onTriggerHardwareSync={openSyncModal}
+              onStartRecording={() => setIsWebRecorderOpen(true)}
+              isHardwareSyncing={hardwareConnectionState === 'syncing'}
+              onAddFolder={store.addFolder}
+              onRenameFolder={store.updateFolder}
+              onDeleteFolder={store.deleteFolder}
+              onShareFolder={handleShareFolder}
+              onDeleteMeeting={store.deleteMeeting}
+              onMoveMeeting={store.moveMeetingToFolder}
+              onRenameMeeting={(id, name) => store.updateMeeting(id, { name })}
+              onToggleStar={store.toggleStarMeeting}
+              onDuplicate={store.duplicateMeeting}
+              onRetry={store.retryProcessMeeting}
+              searchQuery={store.searchQuery}
+              onSearchChange={store.setSearchQuery}
+            />
+          )}
+
+          {store.view === 'list' && (
+            <MeetingListView 
+              meetings={meetingsToShow} 
+              folders={store.folders}
+              currentFolderName={currentFolderName}
+              onTriggerUpload={handleTriggerUpload} 
+              onTriggerHardwareSync={openSyncModal} 
+              onStartRecording={() => setIsWebRecorderOpen(true)}
+              isHardwareSyncing={hardwareConnectionState === 'syncing'} 
+              onSelectMeeting={(id) => {
+                setReturnView('list');
+                store.accessMeeting(id);
+              }}
+              onDeleteMeeting={store.deleteMeeting}
+              onMoveMeeting={store.moveMeetingToFolder}
+              onRenameMeeting={(id, name) => store.updateMeeting(id, { name })}
+              onClearFolder={() => store.setSelectedFolderId(null)}
+              onBack={() => {
+                  store.setSelectedFolderId(null);
+                  store.setView('home');
+              }}
+              showBackButton={navSource === 'home'}
+              selectedFolderId={store.selectedFolderId}
+              onRenameFolder={store.updateFolder}
+              onDeleteFolder={store.deleteFolder}
+              onShareFolder={handleShareFolder}
+              onToggleStar={store.toggleStarMeeting}
+              onDuplicate={store.duplicateMeeting}
+              onRetry={store.retryProcessMeeting}
+              searchQuery={store.searchQuery}
+              onSearchChange={store.setSearchQuery}
+            />
+          )}
+
+          {store.view === 'detail' && store.activeMeeting && (
+            <MeetingDetailView 
+              meeting={store.activeMeeting}
+              meetingList={meetingsToShow}
+              onSelectMeeting={store.accessMeeting}
+              templates={store.templates}
+              voiceprints={store.voiceprints}
+              onUpdate={(updates) => store.updateMeeting(store.activeMeeting!.id, updates)} 
+              onBack={() => store.setView(returnView)} 
+              onRegisterVoiceprint={store.addVoiceprint} 
+              onPreviewShare={(config) => {
+                store.setShareConfig(config);
+                store.setView('external-share');
+              }} 
+            />
+          )}
+
+          {store.view === 'voiceprints' && (
+            <VoiceprintManagerView 
+              voiceprints={store.voiceprints} 
+              onAdd={store.addVoiceprint} 
+              onUpdate={store.updateVoiceprint} 
+              onDelete={store.deleteVoiceprint} 
+            />
+          )}
+
+          {store.view === 'hotwords' && (
+            <HotwordManagerView 
+              hotwords={store.hotwords} 
+              onAdd={store.addHotword} 
+              onUpdate={store.updateHotword} 
+              onDelete={store.deleteHotword} 
+            />
+          )}
+
+          {store.view === 'templates' && (
+            <TemplateManagerView 
+              templates={store.templates} 
+              toggleStarTemplate={store.toggleStarTemplate} 
+              onAdd={store.addTemplate} 
+              onUpdate={store.updateTemplate} 
+              onDelete={store.deleteTemplate} 
+              initialSelectedId={targetTemplateId}
+            />
+          )}
+
+          {store.view === 'recycle-bin' && (
+            <RecycleBinView 
+              deletedMeetings={store.deletedMeetings} 
+              onRestore={store.restoreMeeting} 
+              onPermanentDelete={store.permanentDeleteMeeting}
+            />
+          )}
+      </MainLayout>
+    </>
+  );
 };
 
 export default App;

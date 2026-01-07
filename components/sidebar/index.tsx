@@ -24,16 +24,12 @@ interface SidebarProps {
   onRenameFolder: (id: string, name: string) => void;
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
-  userEmail?: string;
-  userId?: string;
-  onLogout?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView, onChangeView, isHardwareConnecting, onConnectHardware,
   meetingsCount, deletedCount, folders, onAddFolder, selectedFolderId, onSelectFolder,
-  onRenameFolder, onDeleteFolder, onShareFolder,
-  userEmail, userId, onLogout
+  onRenameFolder, onDeleteFolder, onShareFolder
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -125,9 +121,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isHardwareConnecting={isHardwareConnecting}
           onConnectHardware={onConnectHardware}
           onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
-          userEmail={userEmail}
-          userId={userId}
-          onLogout={onLogout}
         />
     </div>
   );

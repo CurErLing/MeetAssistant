@@ -1,8 +1,8 @@
-
 import { supabase } from './supabaseClient';
-import { MeetingFile, Folder, VoiceprintProfile, Hotword, Template } from '../types';
+import { MeetingFile, Folder, VoiceprintProfile, Hotword, Template, TranscriptSegment, Speaker, AnalysisResult } from '../types';
 
 // --- Data Mapping Helpers ---
+// Map Supabase snake_case to App camelCase
 
 const mapMeetingFromDB = (row: any): MeetingFile => ({
   id: row.id,
@@ -28,7 +28,7 @@ const mapMeetingFromDB = (row: any): MeetingFile => ({
 const mapFolderFromDB = (row: any): Folder => ({
   id: row.id,
   name: row.name,
-  meetingIds: [] // Populated by join on frontend
+  meetingIds: [] // Will be populated by joining or filtering meetings
 });
 
 const mapTemplateFromDB = (row: any): Template => ({
@@ -59,28 +59,18 @@ const mapHotwordFromDB = (row: any): Hotword => ({
   createdAt: new Date(row.created_at)
 });
 
-// Helper to get current user ID
-const getCurrentUserId = async () => {
-  const { data } = await supabase.auth.getUser();
-  return data.user?.id;
-};
-
 // --- Service Methods ---
 
 export const supabaseService = {
   // --- Meetings ---
   async fetchMeetings(): Promise<{ active: MeetingFile[], deleted: MeetingFile[] }> {
-    const userId = await getCurrentUserId();
-    if (!userId) return { active: [], deleted: [] };
-
     const { data, error } = await supabase
       .from('meetings')
       .select('*')
-      .eq('user_id', userId) // Filter by current user
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Error fetching meetings:', error);
+      console.error('Error fetching meetings:', JSON.stringify(error, null, 2));
       return { active: [], deleted: [] };
     }
 
@@ -97,27 +87,22 @@ export const supabaseService = {
       .upload(path, file, { upsert: true });
 
     if (error) {
-      console.error('Error uploading audio:', error);
+      console.error('Error uploading audio:', JSON.stringify(error, null, 2));
       return null;
     }
     return data.path;
   },
 
   async createMeeting(meeting: MeetingFile, audioBlob: Blob) {
-    const userId = await getCurrentUserId();
-    if (!userId) throw new Error("User not authenticated");
-
-    // Use userId in path for RLS compatibility
-    const audioPath = `${userId}/${meeting.id}.${meeting.format}`;
+    const audioPath = `${meeting.id}.${meeting.format}`;
     const uploadedPath = await this.uploadAudio(audioBlob, audioPath);
 
     if (!uploadedPath) throw new Error("Audio upload failed");
 
     const row = {
       id: meeting.id,
-      user_id: userId, // Explicit binding
       name: meeting.name,
-      duration: Math.round(meeting.duration || 0),
+      duration: Math.round(meeting.duration || 0), // Ensure integer for DB
       format: meeting.format,
       created_at: meeting.uploadDate.toISOString(),
       last_accessed_at: meeting.lastAccessedAt ? meeting.lastAccessedAt.toISOString() : new Date().toISOString(),
@@ -134,12 +119,13 @@ export const supabaseService = {
 
     const { error } = await supabase.from('meetings').insert(row);
     if (error) {
-      console.error('Error creating meeting:', error);
+      console.error('Error creating meeting:', JSON.stringify(error, null, 2));
       throw error;
     }
   },
 
   async updateMeeting(id: string, updates: Partial<MeetingFile>) {
+    // Map partial updates to DB columns
     const dbUpdates: any = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.folderId !== undefined) dbUpdates.folder_id = updates.folderId;
@@ -152,48 +138,37 @@ export const supabaseService = {
     if (updates.deletedAt !== undefined) dbUpdates.deleted_at = updates.deletedAt ? updates.deletedAt.toISOString() : null;
 
     const { error } = await supabase.from('meetings').update(dbUpdates).eq('id', id);
-    if (error) console.error('Error updating meeting:', error);
+    if (error) console.error('Error updating meeting:', JSON.stringify(error, null, 2));
   },
 
   async deleteMeetingPermanent(id: string, format: string) {
-    const userId = await getCurrentUserId();
-    if (!userId) return;
-
+    // Delete from DB
     await supabase.from('meetings').delete().eq('id', id);
-    // Remove from user specific folder
-    await supabase.storage.from('meeting-recordings').remove([`${userId}/${id}.${format}`]);
+    // Delete from Storage
+    await supabase.storage.from('meeting-recordings').remove([`${id}.${format}`]);
   },
 
   // --- Folders ---
   async fetchFolders(): Promise<Folder[]> {
-    const userId = await getCurrentUserId();
-    if (!userId) return [];
-
-    const { data, error } = await supabase
-      .from('folders')
-      .select('*')
-      .eq('user_id', userId); // Filter by current user
-
+    const { data, error } = await supabase.from('folders').select('*');
     if (error) {
-      console.error('Error fetching folders:', error);
+      console.error('Error fetching folders:', JSON.stringify(error, null, 2));
       return [];
     }
+    
+    // We need to reconstruct meetingIds manually or fetch them. 
+    // For simplicity, we'll let the AppStore logic handle the `meetingIds` array based on the `folderId` in meetings.
     return data.map(mapFolderFromDB);
   },
 
   async createFolder(folder: Folder) {
-    const userId = await getCurrentUserId();
-    const { error } = await supabase.from('folders').insert({ 
-      id: folder.id, 
-      name: folder.name,
-      user_id: userId // Bind to user
-    });
-    if (error) console.error('Error creating folder:', error);
+    const { error } = await supabase.from('folders').insert({ id: folder.id, name: folder.name });
+    if (error) console.error('Error creating folder:', JSON.stringify(error, null, 2));
   },
 
   async updateFolder(id: string, name: string) {
     const { error } = await supabase.from('folders').update({ name }).eq('id', id);
-    if (error) console.error('Error updating folder:', error);
+    if (error) console.error('Error updating folder:', JSON.stringify(error, null, 2));
   },
 
   async deleteFolder(id: string) {
@@ -202,42 +177,29 @@ export const supabaseService = {
 
   // --- Voiceprints ---
   async fetchVoiceprints(): Promise<VoiceprintProfile[]> {
-    const userId = await getCurrentUserId();
-    if (!userId) return [];
-
-    const { data, error } = await supabase
-      .from('voiceprints')
-      .select('*')
-      .eq('user_id', userId) // Filter by current user
-      .order('created_at', { ascending: false });
-
-    if (error) return [];
+    const { data, error } = await supabase.from('voiceprints').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.error('Error fetching voiceprints:', JSON.stringify(error, null, 2));
+      return [];
+    }
     return (data || []).map(mapVoiceprintFromDB);
   },
 
   async createVoiceprint(vp: VoiceprintProfile, audioBlob?: Blob) {
-    const userId = await getCurrentUserId();
-    if (!userId) return;
-
     if (audioBlob) {
-       // Upload to user folder
-       await supabase.storage.from('meeting-recordings').upload(`${userId}/voiceprints/${vp.id}`, audioBlob);
+       await supabase.storage.from('meeting-recordings').upload(`voiceprints/${vp.id}`, audioBlob);
     }
     const { error } = await supabase.from('voiceprints').insert({
       id: vp.id,
-      user_id: userId,
       name: vp.name,
       created_at: vp.createdAt.toISOString()
     });
-    if (error) console.error('Error creating voiceprint:', error);
+    if (error) console.error('Error creating voiceprint:', JSON.stringify(error, null, 2));
   },
 
   async updateVoiceprint(id: string, name?: string, audioBlob?: Blob) {
-    const userId = await getCurrentUserId();
-    if (!userId) return;
-
     if (audioBlob) {
-        await supabase.storage.from('meeting-recordings').upload(`${userId}/voiceprints/${id}`, audioBlob, { upsert: true });
+        await supabase.storage.from('meeting-recordings').upload(`voiceprints/${id}`, audioBlob, { upsert: true });
     }
     if (name) {
         await supabase.from('voiceprints').update({ name }).eq('id', id);
@@ -245,36 +207,23 @@ export const supabaseService = {
   },
 
   async deleteVoiceprint(id: string) {
-    const userId = await getCurrentUserId();
-    if (!userId) return;
-
     await supabase.from('voiceprints').delete().eq('id', id);
-    await supabase.storage.from('meeting-recordings').remove([`${userId}/voiceprints/${id}`]);
+    await supabase.storage.from('meeting-recordings').remove([`voiceprints/${id}`]);
   },
 
   // --- Templates ---
   async fetchTemplates(): Promise<Template[]> {
-    const userId = await getCurrentUserId();
-    
-    // Fetch public (system) templates OR user's private templates
-    let query = supabase.from('templates').select('*');
-    
-    if (userId) {
-       query = query.or(`user_id.eq.${userId},is_user_created.eq.false`);
-    } else {
-       query = query.eq('is_user_created', false);
+    const { data, error } = await supabase.from('templates').select('*');
+    if (error) {
+       console.error('Error fetching templates:', JSON.stringify(error, null, 2));
+       return [];
     }
-
-    const { data, error } = await query;
-    if (error) return [];
     return (data || []).map(mapTemplateFromDB);
   },
 
   async createTemplate(t: Template) {
-    const userId = await getCurrentUserId();
     const { error } = await supabase.from('templates').insert({
       id: t.id,
-      user_id: userId,
       name: t.name,
       description: t.description,
       category: t.category,
@@ -287,10 +236,11 @@ export const supabaseService = {
       is_starred: t.isStarred,
       is_user_created: t.isUserCreated
     });
-    if (error) console.error('Error creating template:', error);
+    if (error) console.error('Error creating template:', JSON.stringify(error, null, 2));
   },
 
   async seedTemplates(templates: Template[]) {
+    // Batch insert templates
     const rows = templates.map(t => ({
       id: t.id,
       name: t.name,
@@ -306,11 +256,13 @@ export const supabaseService = {
       is_user_created: t.isUserCreated
     }));
     
+    // Using upsert (ignore duplicates)
     const { error } = await supabase.from('templates').upsert(rows, { onConflict: 'id' });
-    if (error) console.error('Error seeding templates:', error);
+    if (error) console.error('Error seeding templates:', JSON.stringify(error, null, 2));
   },
 
   async updateTemplate(id: string, updates: Partial<Template>) {
+    // Map to DB columns... simplified for brevity, assume similar pattern
     const dbUpdates: any = {};
     if (updates.name) dbUpdates.name = updates.name;
     if (updates.description) dbUpdates.description = updates.description;
@@ -326,24 +278,17 @@ export const supabaseService = {
 
   // --- Hotwords ---
   async fetchHotwords(): Promise<Hotword[]> {
-    const userId = await getCurrentUserId();
-    if (!userId) return [];
-
-    const { data, error } = await supabase
-      .from('hotwords')
-      .select('*')
-      .eq('user_id', userId) // Filter by current user
-      .order('created_at', { ascending: false });
-
-    if (error) return [];
+    const { data, error } = await supabase.from('hotwords').select('*').order('created_at', { ascending: false });
+    if (error) {
+       console.error('Error fetching hotwords:', JSON.stringify(error, null, 2));
+       return [];
+    }
     return (data || []).map(mapHotwordFromDB);
   },
 
   async createHotword(h: Hotword) {
-    const userId = await getCurrentUserId();
     await supabase.from('hotwords').insert({
       id: h.id,
-      user_id: userId,
       word: h.word,
       category: h.category,
       created_at: h.createdAt.toISOString()

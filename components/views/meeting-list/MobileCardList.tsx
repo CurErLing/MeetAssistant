@@ -7,7 +7,6 @@ import { MeetingActionMenu } from '../../common/MeetingActionMenu';
 import { EmptyState } from '../../EmptyState';
 import { formatTime } from '../../../utils/formatUtils';
 import { MeetingIcon } from '../../common/MeetingIcon';
-import { getOwnerName, getFolderInfo } from '../../../utils/meetingUtils';
 
 interface MobileCardListProps {
   meetings: MeetingFile[];
@@ -26,6 +25,23 @@ export const MobileCardList: React.FC<MobileCardListProps> = ({
   onSelectMeeting,
   onAction
 }) => {
+  const getOwnerName = (meeting: MeetingFile) => {
+    if (!meeting.isReadOnly) return '我';
+    
+    const hash = meeting.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const owners = ['雷军', '张小龙', 'Tim Cook', '产品总监', 'CTO', '王兴'];
+    return owners[hash % owners.length];
+  };
+
+  const getFolderInfo = (folderId?: string) => {
+    const folder = folders.find(f => f.id === folderId);
+    return {
+      name: folder ? folder.name : '未分类',
+      icon: folder ? <Folder size={10} /> : <Inbox size={10} />,
+      isUncategorized: !folder
+    };
+  };
+
   return (
     <div className="sm:hidden space-y-4">
       {meetings.length === 0 ? (
@@ -38,7 +54,7 @@ export const MobileCardList: React.FC<MobileCardListProps> = ({
         const isHardware = meeting.name.toLowerCase().startsWith('hardware');
         const isActive = activeMenuId === meeting.id;
         const ownerName = getOwnerName(meeting);
-        const folderInfo = getFolderInfo(folders, meeting.folderId);
+        const folderInfo = getFolderInfo(meeting.folderId);
 
         return (
           <div 
@@ -61,7 +77,7 @@ export const MobileCardList: React.FC<MobileCardListProps> = ({
                         <span className="uppercase font-mono">{meeting.format}</span>
                         <span className="w-0.5 h-0.5 bg-slate-300 rounded-full"></span>
                         <div className={`flex items-center gap-1 ${folderInfo.isUncategorized ? 'text-slate-300' : 'text-slate-400'}`}>
-                             {folderInfo.isUncategorized ? <Inbox size={10} /> : <Folder size={10} />}
+                             {folderInfo.icon}
                              <span className="truncate max-w-[80px]">{folderInfo.name}</span>
                         </div>
                       </div>

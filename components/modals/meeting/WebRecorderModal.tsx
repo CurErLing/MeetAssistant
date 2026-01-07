@@ -29,14 +29,7 @@ export const WebRecorderModal: React.FC<WebRecorderModalProps> = ({
   useEffect(() => {
     const initStream = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true,
-            sampleRate: 44100
-          } 
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         const recorder = new MediaRecorder(stream);
         
         recorder.ondataavailable = (e) => {
@@ -117,14 +110,7 @@ export const WebRecorderModal: React.FC<WebRecorderModalProps> = ({
     setStatus('idle');
     
     // Re-init stream
-    navigator.mediaDevices.getUserMedia({ 
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          sampleRate: 44100
-        } 
-    }).then(stream => {
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         const recorder = new MediaRecorder(stream);
         recorder.ondataavailable = (e) => {
             if (e.data.size > 0) chunksRef.current.push(e.data);

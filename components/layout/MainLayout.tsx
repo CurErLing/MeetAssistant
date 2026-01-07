@@ -19,9 +19,6 @@ interface MainLayoutProps {
   onRenameFolder: (id: string, name: string) => void;
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
-  userEmail?: string;
-  userId?: string;
-  onLogout?: () => void;
 }
 
 export const MainLayout: React.FC<MainLayoutProps> = ({
@@ -38,10 +35,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   onSelectFolder,
   onRenameFolder,
   onDeleteFolder,
-  onShareFolder,
-  userEmail,
-  userId,
-  onLogout
+  onShareFolder
 }) => {
   // Determine if we should show scrollbar or hide overflow based on view
   const isDetailView = currentView === 'detail';
@@ -62,9 +56,6 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         onRenameFolder={onRenameFolder}
         onDeleteFolder={onDeleteFolder}
         onShareFolder={onShareFolder}
-        userEmail={userEmail}
-        userId={userId}
-        onLogout={onLogout}
       />
 
       <div className="flex-1 flex flex-col min-w-0 h-full lg:h-screen overflow-hidden bg-slate-50/50 relative">

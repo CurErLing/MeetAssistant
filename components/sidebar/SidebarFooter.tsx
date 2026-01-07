@@ -8,21 +8,13 @@ interface SidebarFooterProps {
   isHardwareConnecting: boolean;
   onConnectHardware: () => void;
   onCloseMobileMenu?: () => void;
-  userEmail?: string;
-  userId?: string;
-  onLogout?: () => void;
 }
 
 export const SidebarFooter: React.FC<SidebarFooterProps> = ({
   isHardwareConnecting,
   onConnectHardware,
-  onCloseMobileMenu,
-  userEmail,
-  userId,
-  onLogout
+  onCloseMobileMenu
 }) => {
-  const displayName = userEmail ? userEmail.split('@')[0] : '用户';
-
   return (
     <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-4">
        {/* Hardware Status Card */}
@@ -50,10 +42,9 @@ export const SidebarFooter: React.FC<SidebarFooterProps> = ({
        
        {/* User Profile Component */}
        <UserProfile 
-         name={displayName} 
+         name="邱" 
          role="Pro 版本" 
-         userId={userId}
-         onLogout={onLogout} 
+         onLogout={() => console.log("Logout clicked")} 
        />
     </div>
   );
