@@ -23,8 +23,8 @@ interface GlobalModalsProps {
     battery: number; 
     version: string;
     capacity?: { used: number; total: number } | null;
-  }; // New prop
-  transferProgress?: number; // New prop
+  }; 
+  transferProgress?: number; 
   onToggleHardwareFile: (id: string) => void;
   onSyncHardware: () => void;
   onCloseHardwareModal: () => void;
@@ -44,21 +44,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
 }) => {
   return (
     <>
-      {pendingFile && (
-        <UploadPreviewModal 
-          file={pendingFile}
-          onConfirm={onConfirmUpload}
-          onCancel={onCancelUpload}
-        />
-      )}
-
-      {isWebRecorderOpen && (
-        <WebRecorderModal 
-          onConfirm={onSaveRecording}
-          onCancel={onCloseWebRecorder}
-        />
-      )}
-
+      {/* 层级 1: 硬件同步窗口 (放在最底层) */}
       {isHardwareModalOpen && (
         <HardwareSyncModal 
           connectionState={hardwareConnectionState}
@@ -71,6 +57,14 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
         />
       )}
 
+      {/* 层级 2: 其他功能窗口 */}
+      {isWebRecorderOpen && (
+        <WebRecorderModal 
+          onConfirm={onSaveRecording}
+          onCancel={onCloseWebRecorder}
+        />
+      )}
+
       {activeHomeTemplate && (
         <TemplateDetailModal 
           template={activeHomeTemplate}
@@ -78,6 +72,15 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
           onSave={onSaveTemplate}
           onDelete={onDeleteTemplate}
           onClose={onCloseTemplateModal}
+        />
+      )}
+
+      {/* 层级 3: 预览窗口 (放在最上层，确保同步完成后立即弹出并可见) */}
+      {pendingFile && (
+        <UploadPreviewModal 
+          file={pendingFile}
+          onConfirm={onConfirmUpload}
+          onCancel={onCancelUpload}
         />
       )}
     </>

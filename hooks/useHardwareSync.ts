@@ -6,6 +6,7 @@ import { formatTime } from '../utils/formatUtils';
 export interface HardwareFile {
   id: string;
   name: string;
+  rawName: Uint8Array;
   size: string;
   rawSize: number;
   duration: string; 
@@ -14,7 +15,7 @@ export interface HardwareFile {
 }
 
 export const useHardwareSync = (
-  onCreateMeeting: (file: File) => void,
+  onCreateMeeting: (file: File, context: { isBatch: boolean }) => void,
   onSyncComplete: () => void
 ) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -45,14 +46,13 @@ export const useHardwareSync = (
     setIsModalOpen(true);
     await bluetoothService.connect();
     
-    // Explicitly check connection state
     if (bluetoothService.isConnected) {
         bluetoothService.setStatusCallback((status) => {
             setDeviceStatus(prev => ({ ...prev, ...status }));
         });
 
         // 1. Fetch Device Info (Battery, Capacity, Version)
-        // Await to ensure commands are sent before file list stream potentially hogs the channel
+        // Await to ensure commands are sent before file list stream
         await bluetoothService.getDeviceInfo();
 
         // 2. Fetch File List
@@ -60,9 +60,9 @@ export const useHardwareSync = (
             const mappedFiles = files.map((f, idx) => ({
                 id: `hw_${idx}`,
                 name: f.name,
+                rawName: f.rawName,
                 rawSize: f.size,
                 size: (f.size / 1024 / 1024).toFixed(2) + ' MB',
-                // Use protocol duration if available, otherwise unknown
                 duration: f.duration ? formatTime(f.duration) : '--:--', 
                 date: new Date(f.time * 1000).toLocaleDateString() + ' ' + new Date(f.time * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}),
                 selected: false
@@ -88,19 +88,31 @@ export const useHardwareSync = (
     const filesToSync = deviceFiles.filter(f => f.selected);
     if (filesToSync.length === 0) return;
 
+    const isBatch = filesToSync.length > 1;
+
     for (const fileData of filesToSync) {
       setTransferProgress(0);
-      await new Promise<void>((resolve) => {
-          bluetoothService.downloadFile(
-              fileData.name, 
-              fileData.rawSize,
-              (pct) => setTransferProgress(pct),
-              (file) => {
-                  onCreateMeeting(file);
-                  resolve();
-              }
-          );
-      });
+      try {
+        await new Promise<void>((resolve, reject) => {
+            bluetoothService.downloadFile(
+                fileData.name,
+                fileData.rawName,
+                fileData.rawSize,
+                (pct) => setTransferProgress(pct),
+                (file) => {
+                    onCreateMeeting(file, { isBatch });
+                    resolve();
+                },
+                (error) => {
+                    // Alert user but reject promise to handle flow in loop
+                    alert(`同步文件 ${fileData.name} 失败: ${error}`);
+                    resolve(); // Resolve to continue to next file instead of crashing whole loop
+                }
+            );
+        });
+      } catch (e) {
+        console.error("Sync loop error", e);
+      }
     }
 
     setTransferProgress(100);

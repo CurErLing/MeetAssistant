@@ -44,21 +44,35 @@ export const useAudioPlayer = ({
 
   const togglePlay = useCallback(() => {
     if (!audioRef.current) return;
+    if (!url) return; // Prevent playing if no URL
 
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
     } else {
       // If out of bounds, restart from trimStart
       if (audioRef.current.currentTime >= effectiveTrimEnd - 0.1 || audioRef.current.currentTime < trimStart) {
         audioRef.current.currentTime = trimStart;
       }
-      audioRef.current.play();
+      
+      const playPromise = audioRef.current.play();
+      if (playPromise !== undefined) {
+        playPromise
+          .then(() => {
+            setIsPlaying(true);
+          })
+          .catch(error => {
+            console.error("Audio playback failed:", error);
+            setIsPlaying(false);
+          });
+      } else {
+         setIsPlaying(true);
+      }
     }
-    setIsPlaying(!isPlaying);
-  }, [isPlaying, effectiveTrimEnd, trimStart]);
+  }, [isPlaying, effectiveTrimEnd, trimStart, url]);
 
   const seek = useCallback((time: number) => {
-    if (audioRef.current) {
+    if (audioRef.current && url) {
       // Clamp time
       let newTime = Math.max(0, Math.min(time, duration));
       if (trimEnd > 0) {
@@ -68,10 +82,10 @@ export const useAudioPlayer = ({
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
     }
-  }, [duration, trimEnd]);
+  }, [duration, trimEnd, url]);
 
   const skip = useCallback((amount: number) => {
-    if (audioRef.current) {
+    if (audioRef.current && url) {
       let newTime = audioRef.current.currentTime + amount;
       // Clamp within trim bounds if set
       const end = effectiveTrimEnd || duration;
@@ -80,7 +94,7 @@ export const useAudioPlayer = ({
       audioRef.current.currentTime = newTime;
       setCurrentTime(newTime);
     }
-  }, [trimStart, effectiveTrimEnd, duration]);
+  }, [trimStart, effectiveTrimEnd, duration, url]);
 
   const handleTimeUpdate = () => {
     if (audioRef.current) {

@@ -79,7 +79,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           trimStart={trimStart}
           trimEnd={trimEnd}
           playbackRate={playbackRate}
-          readOnly={readOnly}
+          readOnly={readOnly || !url}
           onSeek={seek}
           onRateChange={setPlaybackRate}
        />
@@ -88,6 +88,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
           isPlaying={isPlaying}
           onTogglePlay={togglePlay}
           onSkip={skip}
+          disabled={!url}
        />
 
        {!readOnly && onTrimChange && (
@@ -101,7 +102,7 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
 
        <audio 
          ref={audioRef} 
-         src={url} 
+         src={url || undefined} 
          onTimeUpdate={handleTimeUpdate} 
          onLoadedMetadata={handleLoadedMetadata} 
          onEnded={handleEnded} 

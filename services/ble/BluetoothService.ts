@@ -1,7 +1,7 @@
 
 import { BLE_UUIDS, DATA_TYPES, CMD, buildPacket, parsePacket, Packet } from './protocol';
 
-// --- Web Bluetooth Types Polyfill ---
+// ... (Web Bluetooth Interfaces - omitted for brevity) ...
 interface BluetoothCharacteristicProperties {
   broadcast: boolean;
   read: boolean;
@@ -93,13 +93,13 @@ declare global {
     bluetooth: Bluetooth;
   }
 }
-// ------------------------------------
 
 export interface DeviceFileInfo {
   name: string;
+  rawName: Uint8Array;
   size: number;
-  time: number; // Unix timestamp in seconds
-  duration?: number; // Duration in seconds (parsed from protocol 'time' field if applicable)
+  time: number;
+  duration?: number;
 }
 
 export interface DeviceStatus {
@@ -119,23 +119,21 @@ class BluetoothService {
   private connectionState: ConnectionState = 'idle';
   private stateListeners: ((state: ConnectionState) => void)[] = [];
   
-  // Independent buffers for packet assembly (Protocol Level)
   private dataBuffer: Uint8Array = new Uint8Array(0);
   private statusBuffer: Uint8Array = new Uint8Array(0);
 
-  // Application State
   private fileListBuffer: DeviceFileInfo[] = [];
   private currentDownloadFile: { name: string; data: Uint8Array[]; receivedSize: number; totalSize: number } | null = null;
   
-  // File List Stream Buffering (Application Level)
   private listDataBuffer: Uint8Array = new Uint8Array(0);
-  private isFetchingList = false; // Flag to track if we are in list fetching mode
-  private listTransferTimer: any = null; // Safety timer for list completion
+  private isFetchingList = false;
+  private listTransferTimer: any = null;
+  private downloadWatchdog: any = null; // Timer to detect transfer stalls
   
-  // Callbacks
   private onFileListReceived: ((files: DeviceFileInfo[]) => void) | null = null;
   private onFileChunkReceived: ((progress: number) => void) | null = null;
   private onFileDownloadComplete: ((file: File) => void) | null = null;
+  private onFileDownloadError: ((error: string) => void) | null = null;
   private onStatusReceived: ((status: Partial<DeviceStatus>) => void) | null = null;
 
   constructor() {}
@@ -179,27 +177,21 @@ class BluetoothService {
       this.server = await this.device.gatt!.connect();
       const service = await this.server.getPrimaryService(BLE_UUIDS.SERVICE);
 
-      // Get Characteristics
       this.writeChar = await service.getCharacteristic(BLE_UUIDS.CHAR_WRITE);
       const notifyCharData = await service.getCharacteristic(BLE_UUIDS.CHAR_NOTIFY_DATA);
       const notifyCharStatus = await service.getCharacteristic(BLE_UUIDS.CHAR_NOTIFY_STATUS);
 
-      // Start Notifications
       await notifyCharData.startNotifications();
       notifyCharData.addEventListener('characteristicvaluechanged', this.handleDataNotification);
 
       await notifyCharStatus.startNotifications();
       notifyCharStatus.addEventListener('characteristicvaluechanged', this.handleStatusNotification);
 
-      // Reset State
       this.dataBuffer = new Uint8Array(0);
       this.statusBuffer = new Uint8Array(0);
       this.seq = 0;
 
       this.setState('connected');
-      
-      // NOTE: We do NOT automatically call getDeviceInfo here anymore to avoid conflict with file list fetching.
-      // The consumer (hook) should orchestrate this.
 
     } catch (error: any) {
       if (error.name === 'NotFoundError') {
@@ -213,18 +205,21 @@ class BluetoothService {
   }
 
   public disconnect() {
+    if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
     if (this.device && this.device.gatt?.connected) {
       this.device.gatt.disconnect();
     }
   }
 
   private handleDisconnect = () => {
+    if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
     this.device = null;
     this.server = null;
     this.writeChar = null;
     this.setState('disconnected');
   };
 
+  // Generic command sender (auto-increments seq)
   private async sendCommand(dataType: number, cmd: number, data: Uint8Array | null = null) {
     if (!this.writeChar) return;
     
@@ -238,19 +233,32 @@ class BluetoothService {
     }
   }
 
-  // --- Logic Commands ---
+  // ACK sender (uses specific seq from received packet)
+  private async sendConfirmation(packet: Packet) {
+    if (!this.writeChar) return;
+    if (packet.payload.length < 2) return;
+
+    // Echo the Type and Cmd from the received packet
+    const type = packet.payload[0];
+    const cmd = packet.payload[1];
+    
+    // Construct ACK packet: Same Seq, Same Type/Cmd, Empty Data
+    const ackData = buildPacket(packet.seq, type, cmd, null);
+    
+    try {
+      // Use fire-and-forget to avoid blocking the read loop
+      await this.writeChar.writeValueWithoutResponse(ackData);
+    } catch (e) {
+      console.warn("ACK write failed", e);
+    }
+  }
 
   public async getDeviceInfo() {
     try {
-        // Send Battery request
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_BATTERY);
-        
         await new Promise(r => setTimeout(r, 400));
-        // Send Capacity request
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_CAPACITY);
-
         await new Promise(r => setTimeout(r, 400));
-        // Send Version request
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_VERSION);
     } catch (e) {
         console.error("Error getting device info", e);
@@ -261,9 +269,8 @@ class BluetoothService {
     this.onFileListReceived = callback;
     this.fileListBuffer = [];
     
-    // Reset list stream buffer
     this.listDataBuffer = new Uint8Array(0);
-    this.isFetchingList = true; // Start list fetching mode
+    this.isFetchingList = true; 
     if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
     
     await this.sendCommand(DATA_TYPES.FILE_TRANSFER, CMD.GET_FILE_LIST);
@@ -271,10 +278,15 @@ class BluetoothService {
 
   public async downloadFile(
     fileName: string, 
+    rawName: Uint8Array,
     fileSize: number,
     onProgress: (pct: number) => void, 
-    onComplete: (file: File) => void
+    onComplete: (file: File) => void,
+    onError: (error: string) => void
   ) {
+    this.isFetchingList = false;
+    if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
+
     this.currentDownloadFile = {
       name: fileName,
       data: [],
@@ -283,33 +295,48 @@ class BluetoothService {
     };
     this.onFileChunkReceived = onProgress;
     this.onFileDownloadComplete = onComplete;
+    this.onFileDownloadError = onError;
     this.setState('syncing');
+    
+    // Start watchdog
+    this.resetDownloadWatchdog();
 
-    // Protocol: Type 2, Cmd 2 (Req Import)
-    // Data: Offset(4B) + Name(20B)
     const buffer = new ArrayBuffer(24);
     const view = new DataView(buffer);
     const uint8 = new Uint8Array(buffer);
     
-    // Offset - Big Endian (Protocol Specification)
     view.setUint32(0, 0, false); 
     
-    // Encode filename
-    let nameBytes: Uint8Array;
-    try {
-      const encoder = new TextEncoder(); // UTF-8
-      nameBytes = encoder.encode(fileName);
-    } catch (e) {
-      nameBytes = new Uint8Array(0); 
+    if (rawName && rawName.length > 0) {
+       const len = Math.min(rawName.length, 20);
+       uint8.set(rawName.slice(0, len), 4);
+    } else {
+       try {
+         const encoder = new TextEncoder();
+         const nameBytes = encoder.encode(fileName);
+         uint8.set(nameBytes.slice(0, 20), 4);
+       } catch (e) {
+       }
     }
-    
-    // Ensure filename fits in 20 bytes
-    uint8.set(nameBytes.slice(0, 20), 4);
 
     await this.sendCommand(DATA_TYPES.FILE_TRANSFER, CMD.REQ_IMPORT_FILE, uint8);
   }
 
-  // --- Notification Handlers ---
+  private resetDownloadWatchdog() {
+    if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
+    
+    // Only active during download
+    if (this.currentDownloadFile) {
+        this.downloadWatchdog = setTimeout(() => {
+            console.warn("Transfer timed out - 8s without data");
+            if (this.onFileDownloadError) {
+                this.onFileDownloadError("设备传输超时");
+            }
+            this.currentDownloadFile = null;
+            this.setState('connected');
+        }, 8000); 
+    }
+  }
 
   private handleDataNotification = (event: Event) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
@@ -341,11 +368,8 @@ class BluetoothService {
   private processBuffer(buffer: Uint8Array, setBuffer: (b: Uint8Array) => void) {
     let currentBuffer = buffer;
 
-    // Header size = 6 (Magic 1 + Seq 1 + CRC 2 + Len 2)
     while (currentBuffer.length >= 6) {
-      // 1. Sync Magic Byte (0x5A)
       if (currentBuffer[0] !== 0x5A) {
-        // Shift buffer until 0x5A found
         let start = 1;
         while (start < currentBuffer.length && currentBuffer[start] !== 0x5A) {
           start++;
@@ -354,28 +378,21 @@ class BluetoothService {
         continue;
       }
 
-      // 2. Read Length (bytes 4, 5 Little Endian) -> Packet length is LE
       const view = new DataView(currentBuffer.buffer, currentBuffer.byteOffset, currentBuffer.byteLength);
       const dataLen = view.getUint16(4, true); 
       const totalPacketLen = 6 + dataLen;
 
-      // 3. Wait for full packet
       if (currentBuffer.length < totalPacketLen) {
         break; 
       }
 
-      // 4. Extract and process
       const packetBytes = currentBuffer.slice(0, totalPacketLen);
       const packet = parsePacket(new DataView(packetBytes.buffer));
 
       if (packet) {
-        if (!packet.isValid) {
-             console.warn("Packet CRC mismatch, but processing to ensure compatibility.", packet);
-        }
         this.handlePacket(packet);
       }
 
-      // 5. Advance buffer
       currentBuffer = currentBuffer.slice(totalPacketLen);
     }
     
@@ -389,6 +406,12 @@ class BluetoothService {
     const cmd = packet.payload[1];
     const data = packet.payload.subarray(2);
 
+    // CRITICAL: Send ACK for File Transfer packets (Type 2)
+    // The device expects a reply with the same Sequence Number for data packets.
+    if (type === DATA_TYPES.FILE_TRANSFER) {
+        this.sendConfirmation(packet);
+    }
+
     if (type === DATA_TYPES.CONTROL) {
        this.handleControlCommand(cmd, data);
     } else if (type === DATA_TYPES.FILE_TRANSFER) {
@@ -401,19 +424,16 @@ class BluetoothService {
        const level = data[0];
        if (this.onStatusReceived) this.onStatusReceived({ battery: level });
     } else if (cmd === CMD.RET_CAPACITY) {
-       // 8 Bytes: Remaining(4) + Total(4)
-       // Doc says: "剩余容量+总量" (Remaining + Total)
        if (data.length >= 8) {
          const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-         // Correct reading order based on protocol
-         const remaining = view.getUint32(0, false); // Big Endian
-         const total = view.getUint32(4, false);     // Big Endian
+         const remaining = view.getUint32(0, false); 
+         const total = view.getUint32(4, false);     
          
          if (this.onStatusReceived) {
            this.onStatusReceived({ 
              capacity: { 
-               used: Math.max(0, total - remaining), 
-               total: total 
+               used: Math.max(0, total - remaining) * 1024 * 1024, 
+               total: total * 1024 * 1024
              } 
            });
          }
@@ -421,80 +441,77 @@ class BluetoothService {
     } else if (cmd === CMD.RET_VERSION) {
        const decoder = new TextDecoder();
        const rawVersion = decoder.decode(data);
-       // Remove null terminators if any
        const version = rawVersion.replace(/\0/g, '');
        if (this.onStatusReceived) this.onStatusReceived({ version });
     }
   }
 
   private handleFileCommand(cmd: number, data: Uint8Array) {
-    if (cmd === CMD.RET_FILE_LIST) {
-      // Important: Protocol specifies "4 Byte Count + 28 Byte Info...".
-      // We assume EVERY packet of this type starts with the count header.
-      // We strip the first 4 bytes (Count) and process the rest as file entries.
+    if (cmd === CMD.START_IMPORT_FILE) {
+        console.log("Device started sending file data.");
+        this.resetDownloadWatchdog(); // Ensure watchdog is active when import starts
+    } else if (cmd === CMD.RET_FILE_LIST) {
       if (data.length >= 4) {
-         // const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-         // const count = view.getUint32(0, false); // Count can be read here if needed
          this.processListStream(data.slice(4));
       }
     } else if (cmd === CMD.FILE_DATA) {
-      // If we are in "Fetching List" mode, treat FILE_DATA as part of the list stream (without stripping header)
-      if (this.isFetchingList && !this.currentDownloadFile) {
-         this.processListStream(data);
-      } else {
+      if (this.currentDownloadFile) {
          this.handleFileData(data);
+      } else if (this.isFetchingList) {
+         this.processListStream(data);
       }
     } else if (cmd === CMD.IMPORT_COMPLETE) {
-      this.finishDownload();
+      const status = data.length > 0 ? data[0] : 0;
+      if (status === 0) {
+         this.finishDownload();
+      } else {
+         console.warn("Hardware import failed with status:", status);
+         if (this.onFileDownloadError) {
+             this.onFileDownloadError(`设备返回错误 (代码 ${status})`);
+         }
+         this.currentDownloadFile = null;
+         this.setState('connected');
+      }
     } else if (cmd === CMD.LIST_TRANSFER_COMPLETE) {
        this.finalizeListTransfer();
     }
   }
 
   private finalizeListTransfer() {
-    this.isFetchingList = false; // Turn off list fetching mode
+    this.isFetchingList = false;
     if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
-    // Don't nullify the callback here, allow subsequent refreshes if needed, 
-    // or rely on caller to manage lifecycle. For now, we keep it active.
     if (this.onFileListReceived) {
-        console.log("File list transfer complete (or timed out). Total files:", this.fileListBuffer.length);
-        // Ensure final state is sent
+        console.log("File list transfer complete. Total files:", this.fileListBuffer.length);
         this.onFileListReceived([...this.fileListBuffer]);
     }
   }
 
   private processListStream(data: Uint8Array) {
-    // Append incoming data chunk to the list buffer
     this.listDataBuffer = this.appendBuffer(this.listDataBuffer, data);
     
-    // Safety Timeout - Refresh on every data chunk
     if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
     this.listTransferTimer = setTimeout(() => {
         this.finalizeListTransfer();
     }, 1500);
 
-    // Parse File Infos (28 bytes each)
-    // Structure: 4B Time (BE) + 4B Size (BE) + 20B Name
     const ENTRY_SIZE = 28;
     let foundNewFiles = false;
     
     while (this.listDataBuffer.length >= ENTRY_SIZE) {
-       // Extract current entry
        const entry = this.listDataBuffer.slice(0, ENTRY_SIZE);
        const view = new DataView(entry.buffer, entry.byteOffset, entry.byteLength);
        
-       // Doc: Time(4), Size(4) are Big Endian
        let protocolTime = view.getUint32(0, false); 
        const size = view.getUint32(4, false); 
        const nameBytes = entry.subarray(8, 28);
        
-       // Decode name
+       const rawName = new Uint8Array(nameBytes);
+
        let nameEnd = 0;
        while (nameEnd < 20 && nameBytes[nameEnd] !== 0) nameEnd++;
        
        let name = "Unknown";
        try {
-         // Priority: GBK (Common in legacy devices) -> UTF-8
          const decoder = new TextDecoder('gbk');
          name = decoder.decode(nameBytes.subarray(0, nameEnd));
        } catch (e) {
@@ -506,8 +523,6 @@ class BluetoothService {
          }
        }
 
-       // Smart Date Parsing from Filename (Priority 1)
-       // e.g., "20260105-115410.opus"
        let parsedTime = 0;
        const dateMatch = name.match(/(\d{4})(\d{2})(\d{2})[-_]?(\d{2})(\d{2})(\d{2})/);
        
@@ -521,35 +536,28 @@ class BluetoothService {
           const date = new Date(year, month, day, hour, minute, second);
           parsedTime = Math.floor(date.getTime() / 1000);
        } else {
-          // Fallback: If protocolTime looks like a real timestamp (> year 2000), use it.
-          // Otherwise default to now.
-          if (protocolTime > 946684800) { // > 2000-01-01
+          if (protocolTime > 946684800) { 
              parsedTime = protocolTime;
           } else {
              parsedTime = Math.floor(Date.now() / 1000); 
           }
        }
 
-       // Determine Duration from protocol time field
-       // If protocolTime is small (e.g. < 1 week), it's likely Duration in seconds.
        let duration = 0;
        if (protocolTime < 604800) {
           duration = protocolTime;
        }
 
        if (size > 0 && name.length > 0) {
-          // Dedup check
           if (!this.fileListBuffer.some(f => f.name === name && f.size === size)) {
-              this.fileListBuffer.push({ name, size, time: parsedTime, duration });
+              this.fileListBuffer.push({ name, rawName, size, time: parsedTime, duration });
               foundNewFiles = true;
           }
        }
        
-       // Move buffer forward
        this.listDataBuffer = this.listDataBuffer.slice(ENTRY_SIZE);
     }
 
-    // Emit progressive update if we found new files
     if (foundNewFiles && this.onFileListReceived) {
         this.onFileListReceived([...this.fileListBuffer]);
     }
@@ -557,6 +565,7 @@ class BluetoothService {
 
   private handleFileData(data: Uint8Array) {
     if (this.currentDownloadFile) {
+      this.resetDownloadWatchdog(); // Reset watchdog on each data chunk
       this.currentDownloadFile.data.push(data);
       this.currentDownloadFile.receivedSize += data.length;
       
@@ -567,15 +576,90 @@ class BluetoothService {
     }
   }
 
+  private getMimeType(filename: string): string {
+    const ext = filename.split('.').pop()?.toLowerCase();
+    switch(ext) {
+        case 'mp3': return 'audio/mpeg';
+        case 'wav': return 'audio/wav';
+        case 'm4a': return 'audio/mp4';
+        case 'aac': return 'audio/aac';
+        case 'ogg': return 'audio/ogg';
+        case 'opus': return 'audio/ogg'; 
+        case 'webm': return 'audio/webm';
+        default: return 'audio/wav'; 
+    }
+  }
+
   private finishDownload() {
+    if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
+    
     if (this.currentDownloadFile && this.onFileDownloadComplete) {
-      const blob = new Blob(this.currentDownloadFile.data, { type: 'audio/wav' }); 
-      const file = new File([blob], this.currentDownloadFile.name, { type: 'audio/wav' });
+      const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
+      const combinedData = new Uint8Array(totalSize);
+      let offset = 0;
+      for (const chunk of this.currentDownloadFile.data) {
+        combinedData.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      let finalData = combinedData;
+      let fileName = this.currentDownloadFile.name;
+      
+      if (!fileName.includes('.')) {
+          fileName += '.wav'; 
+      }
+      
+      const mimeType = this.getMimeType(fileName);
+
+      if (mimeType === 'audio/wav') {
+         const hasRIFF = finalData.length >= 4 && 
+                         finalData[0] === 0x52 && 
+                         finalData[1] === 0x49 && 
+                         finalData[2] === 0x46 && 
+                         finalData[3] === 0x46;   
+         
+         if (!hasRIFF) {
+            console.warn("Detected raw PCM data without header, adding WAV header.");
+            finalData = this.addWavHeader(combinedData, 16000, 1, 16);
+         }
+      }
+
+      const blob = new Blob([finalData], { type: mimeType }); 
+      const file = new File([blob], fileName, { type: mimeType });
       
       this.onFileDownloadComplete(file);
       this.currentDownloadFile = null;
       this.setState('connected');
     }
+  }
+
+  private addWavHeader(samples: Uint8Array, sampleRate: number, numChannels: number, bitDepth: number): Uint8Array {
+      const buffer = new ArrayBuffer(44 + samples.length);
+      const view = new DataView(buffer);
+
+      const writeString = (view: DataView, offset: number, string: string) => {
+        for (let i = 0; i < string.length; i++) {
+          view.setUint8(offset + i, string.charCodeAt(i));
+        }
+      };
+
+      writeString(view, 0, 'RIFF');
+      view.setUint32(4, 36 + samples.length, true);
+      writeString(view, 8, 'WAVE');
+      writeString(view, 12, 'fmt ');
+      view.setUint32(16, 16, true);
+      view.setUint16(20, 1, true); 
+      view.setUint16(22, numChannels, true);
+      view.setUint32(24, sampleRate, true);
+      view.setUint32(28, sampleRate * numChannels * (bitDepth / 8), true);
+      view.setUint16(32, numChannels * (bitDepth / 8), true);
+      view.setUint16(34, bitDepth, true);
+      writeString(view, 36, 'data');
+      view.setUint32(40, samples.length, true);
+
+      const u8 = new Uint8Array(buffer);
+      u8.set(samples, 44);
+      return u8;
   }
 
   public setStatusCallback(cb: (status: Partial<DeviceStatus>) => void) {

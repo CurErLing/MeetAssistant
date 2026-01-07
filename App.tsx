@@ -21,6 +21,15 @@ const App = () => {
   const [navSource, setNavSource] = useState<'home' | 'sidebar'>('sidebar');
   const [returnView, setReturnView] = useState<ViewState>('list');
 
+  // Local UI State
+  const [isWebRecorderOpen, setIsWebRecorderOpen] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingFileSource, setPendingFileSource] = useState<'upload' | 'hardware'>('upload'); // New state to track source
+  const [targetTemplateId, setTargetTemplateId] = useState<string | null>(null);
+  const [homeSelectedTemplateId, setHomeSelectedTemplateId] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Hardware Sync Hook
   const {
     isModalOpen: isHardwareModalOpen,
@@ -33,31 +42,36 @@ const App = () => {
     toggleFileSelection,
     handleSync
   } = useHardwareSync(
-    (file) => store.createMeeting(file, 0, 0, 'hardware'),
+    (file, context) => {
+      // If batch import, create immediately without preview
+      if (context.isBatch) {
+        store.createMeeting(file, 0, 0, 'hardware');
+      } else {
+        // If single file, show preview modal
+        setPendingFileSource('hardware');
+        setPendingFile(file);
+      }
+    },
     () => {
       store.setSelectedFolderId(null);
       store.setView('list');
     }
   );
 
-  // Local UI State
-  const [isWebRecorderOpen, setIsWebRecorderOpen] = useState(false);
-  const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [targetTemplateId, setTargetTemplateId] = useState<string | null>(null);
-  const [homeSelectedTemplateId, setHomeSelectedTemplateId] = useState<string | null>(null);
-  
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Handlers
   const handleTriggerUpload = () => fileInputRef.current?.click();
   const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) setPendingFile(e.target.files[0]);
+    if (e.target.files && e.target.files[0]) {
+      setPendingFileSource('upload');
+      setPendingFile(e.target.files[0]);
+    }
     e.target.value = '';
   };
   
   const handleConfirmUpload = (file: File, trimStart: number, trimEnd: number) => { 
     if (file) { 
-      store.createMeeting(file, trimStart, trimEnd); 
+      // Use the tracked source
+      store.createMeeting(file, trimStart, trimEnd, pendingFileSource); 
       setPendingFile(null);
       store.setSelectedFolderId(null);
       store.setView('list'); 
