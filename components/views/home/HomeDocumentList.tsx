@@ -1,11 +1,11 @@
 
 import React, { useState } from 'react';
-import { Cpu, Users, Calendar, Clock, Star } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
 import { MeetingFile, Folder } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { formatTime } from '../../../utils/formatUtils';
 import { MeetingActionDropdown } from '../../common/MeetingActionDropdown';
-import { MeetingIcon } from '../../common/MeetingIcon';
+import { MeetingMeta } from '../../common/MeetingMeta';
 import { useMeetingModals } from '../../../hooks/useMeetingModals';
 
 interface HomeDocumentListProps {
@@ -34,7 +34,6 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
   const [activeTab, setActiveTab] = useState<'recent' | 'shared' | 'starred'>('recent');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
-  // Use the hook to manage modals locally for this list
   const { handleMeetingAction, MeetingModals } = useMeetingModals(folders, {
     deleteMeeting: onDeleteMeeting,
     moveMeeting: onMoveMeeting,
@@ -44,7 +43,6 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
     retry: onRetry
   });
 
-  // Filter logic
   let displayList: MeetingFile[] = [];
 
   if (activeTab === 'recent') {
@@ -124,7 +122,6 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
            <tbody className="divide-y divide-slate-100">
              {displayList.length > 0 ? displayList.map((meeting) => {
                const isProcessing = meeting.status === 'processing';
-               const isHardware = meeting.name.toLowerCase().startsWith('hardware') || meeting.id.includes('hardware');
                const ownerName = meeting.isReadOnly ? getMockOwner(meeting.id) : '我';
                
                return (
@@ -134,27 +131,11 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
                    onClick={() => handleItemClick(meeting.id, isProcessing)}
                  >
                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <MeetingIcon format={meeting.format} status={meeting.status} size={18} className="w-9 h-9 rounded-lg" />
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                             <div className={`font-medium text-sm truncate max-w-[150px] sm:max-w-xs transition-colors ${isProcessing ? 'text-slate-400' : 'text-slate-900 group-hover:text-blue-600'}`}>{meeting.name}</div>
-                             {isHardware && (
-                               <span className="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100">
-                                 <Cpu size={10} />
-                               </span>
-                             )}
-                             {meeting.isReadOnly && (
-                               <span className="flex-shrink-0 inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-50 text-purple-600 border border-purple-100">
-                                 <Users size={10} />
-                               </span>
-                             )}
-                             {meeting.isStarred && (
-                               <Star size={12} className="text-amber-400 fill-amber-400 flex-shrink-0" />
-                             )}
-                          </div>
-                        </div>
-                      </div>
+                      <MeetingMeta 
+                        meeting={meeting} 
+                        isProcessing={isProcessing} 
+                        showFormatInfo={false} // Home list is compact
+                      />
                    </td>
                    <td className="px-6 py-4 hidden sm:table-cell">
                       <span className="text-sm text-slate-600">{ownerName}</span>

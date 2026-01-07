@@ -1,14 +1,14 @@
 
-import React, { useState, useRef } from 'react';
+import React from 'react';
 import { MoreHorizontal } from 'lucide-react';
 import { FolderActionMenu } from './FolderActionMenu';
-import { useClickOutside } from '../../hooks/useClickOutside';
+import { Dropdown } from './Dropdown';
 
 interface FolderActionDropdownProps {
   onShare: () => void;
   onRename: () => void;
   onDelete: () => void;
-  className?: string; // Allow custom positioning classes
+  className?: string;
 }
 
 export const FolderActionDropdown: React.FC<FolderActionDropdownProps> = ({
@@ -17,33 +17,26 @@ export const FolderActionDropdown: React.FC<FolderActionDropdownProps> = ({
   onDelete,
   className = ""
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useClickOutside(containerRef, () => setIsOpen(false), isOpen);
-
   return (
-    <div ref={containerRef} className="relative">
-      <button 
-        onClick={(e) => {
-           e.stopPropagation();
-           setIsOpen(!isOpen);
-        }}
-        className={`p-1.5 rounded-md transition-colors ${isOpen ? 'text-slate-600 bg-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'} ${className}`}
-      >
-         <MoreHorizontal size={18} />
-      </button>
-
-      {isOpen && (
-        <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-xl shadow-xl border border-slate-100 z-50 animate-slide-up origin-top-right">
+    <Dropdown
+      className={className}
+      trigger={(isOpen) => (
+        <button 
+          className={`p-1.5 rounded-md transition-colors ${isOpen ? 'text-slate-600 bg-slate-200' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'}`}
+        >
+           <MoreHorizontal size={18} />
+        </button>
+      )}
+      content={(close) => (
+         <div className="w-32 bg-white rounded-xl shadow-xl border border-slate-100 overflow-hidden">
            <FolderActionMenu 
              onShare={onShare}
              onRename={onRename}
              onDelete={onDelete}
-             onClose={() => setIsOpen(false)}
+             onClose={close}
            />
-        </div>
+         </div>
       )}
-    </div>
+    />
   );
 };

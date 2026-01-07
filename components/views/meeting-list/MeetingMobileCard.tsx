@@ -1,11 +1,11 @@
 
 import React from 'react';
-import { Cpu, Calendar, Clock, MoreVertical, Users, User, Star, Inbox, Folder } from 'lucide-react';
+import { Calendar, Clock, MoreVertical, User } from 'lucide-react';
 import { MeetingFile, Folder as FolderType } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { MeetingActionMenu } from '../../common/MeetingActionMenu';
 import { formatTime } from '../../../utils/formatUtils';
-import { MeetingIcon } from '../../common/MeetingIcon';
+import { MeetingMeta } from '../../common/MeetingMeta';
 
 interface MeetingMobileCardProps {
   meeting: MeetingFile;
@@ -31,47 +31,24 @@ export const MeetingMobileCard: React.FC<MeetingMobileCardProps> = ({
     return owners[hash % owners.length];
   };
 
-  const getFolderInfo = (folderId?: string) => {
-    const folder = folders.find(f => f.id === folderId);
-    return {
-      name: folder ? folder.name : '未分类',
-      icon: folder ? <Folder size={10} /> : <Inbox size={10} />,
-      isUncategorized: !folder
-    };
-  };
-
   const isProcessing = meeting.status === 'processing';
-  const isHardware = meeting.name.toLowerCase().startsWith('hardware');
   const isActive = activeMenuId === meeting.id;
   const ownerName = getOwnerName(meeting);
-  const folderInfo = getFolderInfo(meeting.folderId);
+  const currentFolder = folders.find(f => f.id === meeting.folderId);
 
   return (
     <div 
       className={`bg-white p-4 rounded-xl border shadow-sm relative ${isProcessing ? 'border-slate-100 opacity-80' : 'border-slate-200'}`}
       onClick={() => { if (!isProcessing) onSelectMeeting(meeting.id); }}
     >
-       {/* Header: Icon, Name, Menu */}
+       {/* Header: Icon, Name, Meta */}
        <div className="flex items-start justify-between mb-3">
-          <div className="flex items-center gap-3 min-w-0">
-             <MeetingIcon format={meeting.format} status={meeting.status} size={20} />
-             <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                   <h4 className="font-bold text-sm text-slate-900 truncate">{meeting.name}</h4>
-                   {isHardware && <Cpu size={12} className="text-amber-500 flex-shrink-0"/>}
-                   {meeting.isReadOnly && <Users size={12} className="text-purple-500 flex-shrink-0"/>}
-                   {meeting.isStarred && <Star size={12} className="text-amber-400 fill-amber-400 flex-shrink-0" />}
-                </div>
-                <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-400">
-                  <span className="uppercase font-mono">{meeting.format}</span>
-                  <span className="w-0.5 h-0.5 bg-slate-300 rounded-full"></span>
-                  <div className={`flex items-center gap-1 ${folderInfo.isUncategorized ? 'text-slate-300' : 'text-slate-400'}`}>
-                       {folderInfo.icon}
-                       <span className="truncate max-w-[80px]">{folderInfo.name}</span>
-                  </div>
-                </div>
-             </div>
-          </div>
+          <MeetingMeta 
+            meeting={meeting} 
+            folder={currentFolder} 
+            isProcessing={isProcessing} 
+            className="flex-1"
+          />
           <button 
             className="p-2 -mr-2 -mt-2 text-slate-400 active:bg-slate-50 rounded-full"
             onClick={(e) => {
