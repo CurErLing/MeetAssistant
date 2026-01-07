@@ -20,7 +20,14 @@ export const useHardwareSync = (
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<'idle' | 'searching' | 'connected' | 'syncing' | 'disconnected'>('idle');
   const [deviceFiles, setDeviceFiles] = useState<HardwareFile[]>([]);
-  const [deviceStatus, setDeviceStatus] = useState({ battery: 0, version: '' });
+  
+  // Initialize with capacity: null to ensure type consistency and reactivity
+  const [deviceStatus, setDeviceStatus] = useState<{
+    battery: number;
+    version: string;
+    capacity: { used: number; total: number } | null;
+  }>({ battery: 0, version: '', capacity: null });
+  
   const [transferProgress, setTransferProgress] = useState(0);
   
   // Listen to service state
@@ -38,12 +45,17 @@ export const useHardwareSync = (
     setIsModalOpen(true);
     await bluetoothService.connect();
     
-    // Connection happens, then we fetch list
-    if (bluetoothService['connectionState'] === 'connected') {
+    // Explicitly check connection state
+    if (bluetoothService.isConnected) {
         bluetoothService.setStatusCallback((status) => {
             setDeviceStatus(prev => ({ ...prev, ...status }));
         });
 
+        // 1. Fetch Device Info (Battery, Capacity, Version)
+        // Await to ensure commands are sent before file list stream potentially hogs the channel
+        await bluetoothService.getDeviceInfo();
+
+        // 2. Fetch File List
         bluetoothService.fetchFileList((files) => {
             const mappedFiles = files.map((f, idx) => ({
                 id: `hw_${idx}`,

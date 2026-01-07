@@ -129,7 +129,6 @@ class BluetoothService {
   
   // File List Stream Buffering (Application Level)
   private listDataBuffer: Uint8Array = new Uint8Array(0);
-  private hasParsedListCount = false;
   private isFetchingList = false; // Flag to track if we are in list fetching mode
   private listTransferTimer: any = null; // Safety timer for list completion
   
@@ -143,6 +142,10 @@ class BluetoothService {
 
   public isSupported(): boolean {
     return !!navigator.bluetooth;
+  }
+
+  public get isConnected(): boolean {
+    return this.connectionState === 'connected';
   }
 
   public subscribeToState(cb: (state: ConnectionState) => void) {
@@ -195,8 +198,8 @@ class BluetoothService {
 
       this.setState('connected');
       
-      // Initialize Device info (Battery & Capacity)
-      setTimeout(() => this.getDeviceInfo(), 800);
+      // NOTE: We do NOT automatically call getDeviceInfo here anymore to avoid conflict with file list fetching.
+      // The consumer (hook) should orchestrate this.
 
     } catch (error: any) {
       if (error.name === 'NotFoundError') {
@@ -238,12 +241,20 @@ class BluetoothService {
   // --- Logic Commands ---
 
   public async getDeviceInfo() {
-    // Send Battery request
-    await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_BATTERY);
-    // Wait longer between commands to prevent packet loss
-    await new Promise(r => setTimeout(r, 500));
-    // Send Capacity request
-    await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_CAPACITY);
+    try {
+        // Send Battery request
+        await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_BATTERY);
+        
+        await new Promise(r => setTimeout(r, 400));
+        // Send Capacity request
+        await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_CAPACITY);
+
+        await new Promise(r => setTimeout(r, 400));
+        // Send Version request
+        await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_VERSION);
+    } catch (e) {
+        console.error("Error getting device info", e);
+    }
   }
 
   public async fetchFileList(callback: (files: DeviceFileInfo[]) => void) {
@@ -252,7 +263,6 @@ class BluetoothService {
     
     // Reset list stream buffer
     this.listDataBuffer = new Uint8Array(0);
-    this.hasParsedListCount = false;
     this.isFetchingList = true; // Start list fetching mode
     if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
     
@@ -391,12 +401,13 @@ class BluetoothService {
        const level = data[0];
        if (this.onStatusReceived) this.onStatusReceived({ battery: level });
     } else if (cmd === CMD.RET_CAPACITY) {
-       // 8 Bytes: Total(4) + Remaining(4) OR Remaining(4) + Total(4)
+       // 8 Bytes: Remaining(4) + Total(4)
+       // Doc says: "剩余容量+总量" (Remaining + Total)
        if (data.length >= 8) {
          const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-         // Doc: Capacity data is Big Endian
-         const total = view.getUint32(0, false);     
-         const remaining = view.getUint32(4, false); 
+         // Correct reading order based on protocol
+         const remaining = view.getUint32(0, false); // Big Endian
+         const total = view.getUint32(4, false);     // Big Endian
          
          if (this.onStatusReceived) {
            this.onStatusReceived({ 
@@ -409,17 +420,25 @@ class BluetoothService {
        }
     } else if (cmd === CMD.RET_VERSION) {
        const decoder = new TextDecoder();
-       const version = decoder.decode(data);
+       const rawVersion = decoder.decode(data);
+       // Remove null terminators if any
+       const version = rawVersion.replace(/\0/g, '');
        if (this.onStatusReceived) this.onStatusReceived({ version });
     }
   }
 
   private handleFileCommand(cmd: number, data: Uint8Array) {
     if (cmd === CMD.RET_FILE_LIST) {
-      this.processListStream(data);
+      // Important: Protocol specifies "4 Byte Count + 28 Byte Info...".
+      // We assume EVERY packet of this type starts with the count header.
+      // We strip the first 4 bytes (Count) and process the rest as file entries.
+      if (data.length >= 4) {
+         // const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+         // const count = view.getUint32(0, false); // Count can be read here if needed
+         this.processListStream(data.slice(4));
+      }
     } else if (cmd === CMD.FILE_DATA) {
-      // Important: If we are in "Fetching List" mode, treat FILE_DATA as part of the list stream
-      // This handles cases where devices switch to a data streaming command for the list content
+      // If we are in "Fetching List" mode, treat FILE_DATA as part of the list stream (without stripping header)
       if (this.isFetchingList && !this.currentDownloadFile) {
          this.processListStream(data);
       } else {
@@ -435,10 +454,12 @@ class BluetoothService {
   private finalizeListTransfer() {
     this.isFetchingList = false; // Turn off list fetching mode
     if (this.listTransferTimer) clearTimeout(this.listTransferTimer);
+    // Don't nullify the callback here, allow subsequent refreshes if needed, 
+    // or rely on caller to manage lifecycle. For now, we keep it active.
     if (this.onFileListReceived) {
-        console.log("File list transfer complete. Total files:", this.fileListBuffer.length);
-        this.onFileListReceived(this.fileListBuffer);
-        this.onFileListReceived = null;
+        console.log("File list transfer complete (or timed out). Total files:", this.fileListBuffer.length);
+        // Ensure final state is sent
+        this.onFileListReceived([...this.fileListBuffer]);
     }
   }
 
@@ -452,21 +473,10 @@ class BluetoothService {
         this.finalizeListTransfer();
     }, 1500);
 
-    // 1. Header: 4 Bytes File Count (Big Endian)
-    if (!this.hasParsedListCount) {
-       if (this.listDataBuffer.length < 4) return;
-       
-       const view = new DataView(this.listDataBuffer.buffer, this.listDataBuffer.byteOffset, this.listDataBuffer.byteLength);
-       const fileCount = view.getUint32(0, false); // Big Endian
-       console.log(`Expecting ${fileCount} files`);
-
-       this.listDataBuffer = this.listDataBuffer.slice(4);
-       this.hasParsedListCount = true;
-    }
-
-    // 2. Parse File Infos (28 bytes each)
+    // Parse File Infos (28 bytes each)
     // Structure: 4B Time (BE) + 4B Size (BE) + 20B Name
     const ENTRY_SIZE = 28;
+    let foundNewFiles = false;
     
     while (this.listDataBuffer.length >= ENTRY_SIZE) {
        // Extract current entry
@@ -531,11 +541,17 @@ class BluetoothService {
           // Dedup check
           if (!this.fileListBuffer.some(f => f.name === name && f.size === size)) {
               this.fileListBuffer.push({ name, size, time: parsedTime, duration });
+              foundNewFiles = true;
           }
        }
        
        // Move buffer forward
        this.listDataBuffer = this.listDataBuffer.slice(ENTRY_SIZE);
+    }
+
+    // Emit progressive update if we found new files
+    if (foundNewFiles && this.onFileListReceived) {
+        this.onFileListReceived([...this.fileListBuffer]);
     }
   }
 

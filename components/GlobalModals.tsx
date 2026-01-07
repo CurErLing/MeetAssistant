@@ -19,7 +19,11 @@ interface GlobalModalsProps {
   isHardwareModalOpen: boolean;
   hardwareConnectionState: 'idle' | 'searching' | 'connected' | 'syncing' | 'disconnected';
   deviceFiles: HardwareFile[];
-  deviceStatus?: { battery: number; version: string }; // New prop
+  deviceStatus?: { 
+    battery: number; 
+    version: string;
+    capacity?: { used: number; total: number } | null;
+  }; // New prop
   transferProgress?: number; // New prop
   onToggleHardwareFile: (id: string) => void;
   onSyncHardware: () => void;
