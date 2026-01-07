@@ -7,6 +7,7 @@ import { MeetingActionDropdown } from '../../common/MeetingActionDropdown';
 import { EmptyState } from '../../EmptyState';
 import { formatTime } from '../../../utils/formatUtils';
 import { MeetingIcon } from '../../common/MeetingIcon';
+import { getOwnerName, getFolderInfo } from '../../../utils/meetingUtils';
 
 interface DesktopTableProps {
   meetings: MeetingFile[];
@@ -27,24 +28,6 @@ export const DesktopTable: React.FC<DesktopTableProps> = ({
   onTriggerUpload,
   onAction
 }) => {
-  const getOwnerName = (meeting: MeetingFile) => {
-    if (!meeting.isReadOnly) return '我';
-    
-    // 简单根据ID显示模拟的所有者，保持与首页一致
-    const hash = meeting.id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-    const owners = ['雷军', '张小龙', 'Tim Cook', '产品总监', 'CTO', '王兴'];
-    return owners[hash % owners.length];
-  };
-
-  const getFolderInfo = (folderId?: string) => {
-    const folder = folders.find(f => f.id === folderId);
-    return {
-      name: folder ? folder.name : '未分类',
-      icon: folder ? <Folder size={10} /> : <Inbox size={10} />,
-      isUncategorized: !folder
-    };
-  };
-
   return (
     <div className="hidden sm:block bg-white rounded-xl border border-slate-200 shadow-sm overflow-visible">
       <table className="w-full text-left">
@@ -73,7 +56,7 @@ export const DesktopTable: React.FC<DesktopTableProps> = ({
             const isProcessing = meeting.status === 'processing';
             const isHardware = meeting.name.toLowerCase().startsWith('hardware') || meeting.id.includes('hardware');
             const ownerName = getOwnerName(meeting);
-            const folderInfo = getFolderInfo(meeting.folderId);
+            const folderInfo = getFolderInfo(folders, meeting.folderId);
 
             return (
               <tr 
@@ -107,7 +90,7 @@ export const DesktopTable: React.FC<DesktopTableProps> = ({
                         <span className="uppercase font-mono">{meeting.format}</span>
                         <span className="w-0.5 h-0.5 bg-slate-300 rounded-full"></span>
                         <div className={`flex items-center gap-1 ${folderInfo.isUncategorized ? 'text-slate-300' : 'text-slate-500'}`} title={folderInfo.name}>
-                             {folderInfo.icon}
+                             {folderInfo.isUncategorized ? <Inbox size={10} /> : <Folder size={10} />}
                              <span className="truncate max-w-[80px]">{folderInfo.name}</span>
                         </div>
                       </div>

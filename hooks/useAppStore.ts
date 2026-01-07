@@ -16,21 +16,18 @@ const SPEAKER_COLORS = [
   'text-rose-600 bg-rose-50 border-rose-200',
 ];
 
-// User type compatible with Supabase user
 interface User {
   id: string;
   email?: string;
 }
 
 export const useAppStore = (user?: User) => {
-  // --- 状态定义 ---
   const [view, setView] = useState<ViewState>('home');
   const [activeMeetingId, setActiveMeetingId] = useState<string | null>(null);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [shareConfig, setShareConfig] = useState<ShareConfig | null>(null);
 
-  // 数据状态
   const [meetings, setMeetings] = useState<MeetingFile[]>([]);
   const [deletedMeetings, setDeletedMeetings] = useState<MeetingFile[]>([]);
   const [folders, setFolders] = useState<Folder[]>([]);
@@ -40,20 +37,17 @@ export const useAppStore = (user?: User) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Determine mock mode:
-  // 1. Explicit mock email (admin@mock.com)
-  // 2. Phone auth mocks (@phone.mock)
-  // 3. Guest ID (2025000001)
-  const isMockMode = user?.email === 'admin@mock.com' || user?.email === 'guest@mock.com' || user?.email?.endsWith('@phone.mock') || user?.id === '2025000001';
+  // Mock Mode Logic:
+  // Only explicitly Guest or Admin Mock account is mock.
+  const isMockMode = user?.email === 'admin@mock.com' || user?.email === 'guest@mock.com' || user?.id === '2025000001';
 
-  // --- 初始化：从 Supabase 或 Mock 加载数据 ---
   useEffect(() => {
     const initData = async () => {
       setIsLoading(true);
       setError(null);
       try {
         if (isMockMode) {
-          // Mock / Guest Mode: Load Local Mocks
+          console.log("Using Mock Data Mode");
           setMeetings([...MOCK_LOCAL_MEETINGS, ...MOCK_SHARED_MEETINGS]);
           setFolders([{ id: 'mock_folder_1', name: '产品规划', meetingIds: ['mock_local_1'] }]);
           setTemplates(DEFAULT_TEMPLATES);
@@ -61,6 +55,7 @@ export const useAppStore = (user?: User) => {
           setHotwords([]);
         } else {
           // Real User Mode: Supabase
+          console.log("Fetching from Supabase for user:", user?.email);
           try {
             const [
               fetchedMeetings,
@@ -78,7 +73,6 @@ export const useAppStore = (user?: User) => {
 
             let finalTemplates = fetchedTemplates;
             if (fetchedTemplates.length === 0) {
-              // Seed default templates for new real users
               await supabaseService.seedTemplates(DEFAULT_TEMPLATES);
               finalTemplates = DEFAULT_TEMPLATES;
             }
@@ -98,13 +92,28 @@ export const useAppStore = (user?: User) => {
             setHotwords(fetchedHotwords);
           } catch (dbError: any) {
             console.error("Supabase Database Error:", dbError);
-            throw new Error(`数据库连接失败: ${dbError.message || '请检查控制台详情'}`);
+            let userMsg = dbError.message;
+            
+            // 友好的错误提示翻译
+            if (userMsg.includes('Failed to fetch')) {
+               userMsg = "连接云端数据库失败 (Failed to fetch)。请检查：1. Supabase 项目是否已暂停？ 2. API Key 是否正确(需用ey开头)？ 3. 网络是否正常？";
+            } else if (userMsg.includes('relation') && userMsg.includes('does not exist')) {
+               userMsg = "数据库表结构未初始化。请在 Supabase SQL Editor 中运行建表脚本。";
+            } else if (userMsg.includes('JWT')) {
+               userMsg = "API Key 无效。请在代码中填入正确的 Supabase anon public key。";
+            }
+
+            setError(userMsg);
+            // Fallback to empty state to avoid crash, but show error
+            setMeetings([]);
+            setFolders([]);
+            setTemplates(DEFAULT_TEMPLATES);
           }
         }
 
       } catch (error: any) {
         console.error("Failed to initialize data:", error);
-        setError(error.message || "无法加载数据，请检查网络或刷新重试。");
+        setError(error.message);
       } finally {
         setIsLoading(false);
       }
@@ -113,10 +122,9 @@ export const useAppStore = (user?: User) => {
     if (user) initData();
   }, [user, isMockMode]);
 
-  // --- Helper Getter ---
+  // ... (其余 Action 代码保持不变) ...
+  
   const activeMeeting = meetings.find(m => m.id === activeMeetingId) || null;
-
-  // --- Actions ---
 
   const accessMeeting = (id: string) => {
     setMeetings(prev => prev.map(m => 
@@ -164,7 +172,6 @@ export const useAppStore = (user?: User) => {
     setFolders(prev => prev.filter(f => f.id !== id));
     setMeetings(prev => prev.map(m => m.folderId === id ? { ...m, folderId: undefined } : m));
     if (selectedFolderId === id) setSelectedFolderId(null);
-    
     if (!isMockMode) supabaseService.deleteFolder(id);
   };
 
@@ -177,7 +184,6 @@ export const useAppStore = (user?: User) => {
       }
       return { ...f, meetingIds: filteredIds };
     }));
-
     if (!isMockMode && !meetingId.startsWith('mock_')) {
       supabaseService.updateMeeting(meetingId, { folderId: folderId || undefined });
     }
@@ -189,12 +195,10 @@ export const useAppStore = (user?: User) => {
       const deletedAt = new Date();
       setDeletedMeetings(prev => [{ ...meetingToDelete, deletedAt }, ...prev]);
       setMeetings(prev => prev.filter(m => m.id !== id));
-      
       if (activeMeetingId === id) {
         setActiveMeetingId(null);
         if (view === 'detail') setView('home');
       }
-
       if (!isMockMode && !id.startsWith('mock_')) {
         supabaseService.updateMeeting(id, { deletedAt });
       }
@@ -207,7 +211,6 @@ export const useAppStore = (user?: User) => {
       const { deletedAt, ...rest } = meetingToRestore;
       setMeetings(prev => [rest, ...prev]);
       setDeletedMeetings(prev => prev.filter(m => m.id !== id));
-
       if (!isMockMode && !id.startsWith('mock_')) {
         supabaseService.updateMeeting(id, { deletedAt: undefined });
       }
@@ -264,10 +267,10 @@ export const useAppStore = (user?: User) => {
 
     try {
       if (!isMockMode) {
-        await supabaseService.createMeeting(newMeeting, fileToProcess).catch(err => {
-            console.error("Supabase create meeting error:", err);
-            throw err;
-        });
+        console.log("Uploading meeting to Supabase...");
+        await supabaseService.createMeeting(newMeeting, fileToProcess);
+      } else {
+        console.warn("Mock mode active - not saving to DB");
       }
       
       const segments = await transcribeAudio(fileToProcess, { start: 0, end: 0 });
@@ -288,16 +291,14 @@ export const useAppStore = (user?: User) => {
     } catch (error: any) {
       console.error("Create meeting failed (Full):", error);
       updateMeeting(id, { status: 'error' });
-      setError(`文件创建失败: ${error.message}`);
+      setError(`保存失败: ${error.message}`);
     }
   };
 
   const retryProcessMeeting = async (id: string) => {
     const meeting = meetings.find(m => m.id === id);
     if (!meeting) return;
-
     updateMeeting(id, { status: 'processing' });
-
     try {
       let fileToProcess = meeting.file;
       if (!fileToProcess && meeting.url) {
@@ -307,9 +308,7 @@ export const useAppStore = (user?: User) => {
               fileToProcess = new File([blob], `${meeting.name}.${meeting.format}`, { type: meeting.format === 'mp3' ? 'audio/mpeg' : 'audio/wav' });
           } catch(e) {}
       }
-
       if (!fileToProcess) throw new Error("Audio file not found. Please re-upload.");
-
       const segments = await transcribeAudio(fileToProcess, { start: meeting.trimStart, end: meeting.trimEnd });
       const uniqueSpeakerIds = Array.from(new Set(segments.map(s => s.speakerId)));
       const newSpeakers: Record<string, Speaker> = {};
@@ -322,13 +321,10 @@ export const useAppStore = (user?: User) => {
           color: SPEAKER_COLORS[index % SPEAKER_COLORS.length] 
         };
       });
-
       updateMeeting(id, { status: 'ready', transcript: segments, speakers: newSpeakers });
-      
       if (!isMockMode) {
         supabaseService.updateMeeting(id, { status: 'ready', transcript: segments, speakers: newSpeakers });
       }
-
     } catch (error: any) {
       updateMeeting(id, { status: 'error' });
     }
@@ -349,7 +345,6 @@ export const useAppStore = (user?: User) => {
      alert("暂不支持云端文件复制功能");
   };
 
-  // --- 管理功能 Action ---
   const addVoiceprint = async (name: string, file?: Blob) => {
     const id = `vp_${Date.now()}`;
     const newVp = { id, name, createdAt: new Date() };
