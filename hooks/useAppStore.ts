@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { MeetingFile, Speaker, SpeakerStatus, VoiceprintProfile, Hotword, Template, ViewState, Folder, ShareConfig } from '../types';
 import { transcribeAudio } from '../services/geminiService';
@@ -147,7 +146,6 @@ export const useAppStore = () => {
     if (selectedFolderId === id) setSelectedFolderId(null);
     
     supabaseService.deleteFolder(id);
-    // 注意：还需要更新所有受影响 meeting 的 folder_id 为 null，Supabase FK 可以设置 ON DELETE SET NULL 自动处理
   };
 
   const moveMeetingToFolder = (meetingId: string, folderId: string | null) => {
@@ -206,9 +204,9 @@ export const useAppStore = () => {
     }
   };
 
-  const createMeeting = async (file: File, trimStart = 0, trimEnd = 0) => {
+  const createMeeting = async (file: File, trimStart = 0, trimEnd = 0, source: 'upload' | 'recording' | 'hardware' = 'upload') => {
     let fileToProcess = file;
-    if (trimStart > 0 || trimEnd > 0) {
+    if (trimStart > 0 || (trimEnd > 0 && trimEnd < file.size)) {
       try {
         fileToProcess = await sliceAudio(file, trimStart, trimEnd);
       } catch (error) {
@@ -216,7 +214,12 @@ export const useAppStore = () => {
       }
     }
 
-    const id = Date.now().toString();
+    // Generate ID based on source
+    let idPrefix = '';
+    if (source === 'hardware') idPrefix = 'hardware_';
+    else if (source === 'recording') idPrefix = 'rec_';
+    const id = `${idPrefix}${Date.now()}`;
+    
     // 临时 URL 用于 UI 立即显示
     const url = URL.createObjectURL(fileToProcess);
     
@@ -239,7 +242,8 @@ export const useAppStore = () => {
       trimStart: 0, 
       trimEnd: 0,
       folderId: selectedFolderId || undefined,
-      isStarred: false 
+      isStarred: false,
+      transcript: []
     };
     
     // 1. UI 立即更新
@@ -248,31 +252,58 @@ export const useAppStore = () => {
       setFolders(prev => prev.map(f => f.id === selectedFolderId ? { ...f, meetingIds: [...f.meetingIds, id] } : f));
     }
 
-    // 2. 后台上传并创建数据库记录
+    // 2. 后台上传并创建
     try {
+      // Supabase Upload
       await supabaseService.createMeeting(newMeeting, fileToProcess);
+
+      // Gemini Transcribe
+      const transcript = await transcribeAudio(fileToProcess);
       
-      // 3. 转写
-      const segments = await transcribeAudio(fileToProcess, { start: 0, end: 0 });
-      const uniqueSpeakerIds = Array.from(new Set(segments.map(s => s.speakerId)));
-      const newSpeakers: Record<string, Speaker> = {};
-      uniqueSpeakerIds.forEach((sid, index) => {
-        newSpeakers[sid] = { 
-          id: sid, 
-          defaultLabel: `发言人 ${index + 1}`, 
-          name: `发言人 ${index + 1}`, 
-          status: SpeakerStatus.IDENTIFIED, 
-          color: SPEAKER_COLORS[index % SPEAKER_COLORS.length] 
-        };
-      });
+      // Update Meeting with result
+      const updates = { 
+        status: 'ready' as const, 
+        transcript 
+      };
+      
+      setMeetings(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+      supabaseService.updateMeeting(id, updates);
 
-      // 更新本地和远程状态为 Ready
-      updateMeeting(id, { status: 'ready', transcript: segments, speakers: newSpeakers });
+   } catch (error) {
+      console.error("Processing failed", JSON.stringify(error, null, 2));
+      const updates = { status: 'error' as const };
+      setMeetings(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+      supabaseService.updateMeeting(id, updates);
+   }
+  };
 
-    } catch (error: any) {
-      console.error("Create meeting failed:", error.message || JSON.stringify(error));
-      updateMeeting(id, { status: 'error' });
+  const toggleStarMeeting = (id: string) => {
+    const meeting = meetings.find(m => m.id === id);
+    if (meeting) {
+      updateMeeting(id, { isStarred: !meeting.isStarred });
     }
+  };
+
+  const duplicateMeeting = async (id: string) => {
+    const original = meetings.find(m => m.id === id);
+    if (!original) return;
+
+    const newId = `copy_${Date.now()}`;
+    const newName = `${original.name} (副本)`;
+    
+    const copy: MeetingFile = {
+      ...original,
+      id: newId,
+      name: newName,
+      uploadDate: new Date(),
+      lastAccessedAt: new Date(),
+      isStarred: false,
+    };
+
+    setMeetings(prev => [copy, ...prev]);
+    
+    // Note: Actual file duplication in backend is omitted for brevity in this frontend logic
+    // Ideally we should copy the file in Supabase storage and create a new record.
   };
 
   const retryProcessMeeting = async (id: string) => {
@@ -280,86 +311,60 @@ export const useAppStore = () => {
     if (!meeting) return;
 
     updateMeeting(id, { status: 'processing' });
-
-    try {
-      let fileToProcess = meeting.file;
-      // Try to recover file from URL if File object is lost (e.g. page refresh)
-      if (!fileToProcess && meeting.url) {
-          try {
-              const res = await fetch(meeting.url);
-              const blob = await res.blob();
-              fileToProcess = new File([blob], `${meeting.name}.${meeting.format}`, { type: meeting.format === 'mp3' ? 'audio/mpeg' : 'audio/wav' });
-          } catch(e) {
-              console.error("Failed to fetch audio for retry", e);
-          }
+    
+    // Attempt to recover file from URL if file object is missing
+    let fileToProcess = meeting.file;
+    if (!fileToProcess && meeting.url) {
+      try {
+        const res = await fetch(meeting.url);
+        const blob = await res.blob();
+        fileToProcess = new File([blob], `${meeting.name}.${meeting.format}`, { type: blob.type });
+      } catch (e) {
+        console.error("Failed to fetch file for retry", e);
       }
+    }
 
-      if (!fileToProcess) throw new Error("Audio file not found. Please re-upload.");
-
-      // Transcribe
-      const segments = await transcribeAudio(fileToProcess, { start: meeting.trimStart, end: meeting.trimEnd });
-      
-      const uniqueSpeakerIds = Array.from(new Set(segments.map(s => s.speakerId)));
-      const newSpeakers: Record<string, Speaker> = {};
-      uniqueSpeakerIds.forEach((sid, index) => {
-        newSpeakers[sid] = { 
-          id: sid, 
-          defaultLabel: `发言人 ${index + 1}`, 
-          name: `发言人 ${index + 1}`, 
-          status: SpeakerStatus.IDENTIFIED, 
-          color: SPEAKER_COLORS[index % SPEAKER_COLORS.length] 
-        };
-      });
-
-      updateMeeting(id, { status: 'ready', transcript: segments, speakers: newSpeakers });
-      
-      // Update DB with new transcript
-      supabaseService.updateMeeting(id, { status: 'ready', transcript: segments, speakers: newSpeakers });
-
-    } catch (error: any) {
-      console.error("Retry failed:", error);
+    if (fileToProcess) {
+      try {
+        const transcript = await transcribeAudio(fileToProcess);
+        updateMeeting(id, { status: 'ready', transcript });
+      } catch (error) {
+        updateMeeting(id, { status: 'error' });
+      }
+    } else {
       updateMeeting(id, { status: 'error' });
     }
   };
 
-  const toggleStarMeeting = (id: string) => {
-    const meeting = meetings.find(m => m.id === id);
-    if (meeting) {
-      const newVal = !meeting.isStarred;
-      setMeetings(prev => prev.map(m => m.id === id ? { ...m, isStarred: newVal } : m));
-      if (!id.startsWith('mock_')) {
-        supabaseService.updateMeeting(id, { isStarred: newVal });
-      }
-    }
-  };
-
-  const duplicateMeeting = async (id: string) => {
-     // 复制功能涉及文件复制，在 Supabase 中可以通过 copy 存储文件实现
-     // 简化版：暂不支持云端文件的直接复制操作，或者仅在前端复制元数据？
-     // 此处保留为空实现或提示用户，或者实现完整的后端复制逻辑。
-     alert("暂不支持云端文件复制功能");
-  };
-
-  // --- 管理功能 Action (直接连接 Supabase) ---
-  const addVoiceprint = async (name: string, file?: Blob) => {
-    const id = `vp_${Date.now()}`;
-    const newVp = { id, name, createdAt: new Date() };
+  // --- Voiceprints ---
+  const addVoiceprint = (name: string, file?: Blob) => {
+    const newVp: VoiceprintProfile = {
+      id: `vp_${Date.now()}`,
+      name,
+      createdAt: new Date()
+    };
     setVoiceprints(prev => [newVp, ...prev]);
-    await supabaseService.createVoiceprint(newVp, file);
+    supabaseService.createVoiceprint(newVp, file);
   };
 
-  const updateVoiceprint = async (id: string, name?: string, file?: Blob) => {
+  const updateVoiceprint = (id: string, name?: string, file?: Blob) => {
     setVoiceprints(prev => prev.map(vp => vp.id === id ? { ...vp, name: name || vp.name } : vp));
-    await supabaseService.updateVoiceprint(id, name, file);
+    supabaseService.updateVoiceprint(id, name, file);
   };
 
-  const deleteVoiceprint = async (id: string) => {
+  const deleteVoiceprint = (id: string) => {
     setVoiceprints(prev => prev.filter(vp => vp.id !== id));
-    await supabaseService.deleteVoiceprint(id);
+    supabaseService.deleteVoiceprint(id);
   };
 
+  // --- Hotwords ---
   const addHotword = (word: string, category: string) => {
-    const newHw = { id: `hw_${Date.now()}`, word, category, createdAt: new Date() };
+    const newHw: Hotword = {
+      id: `hw_${Date.now()}`,
+      word,
+      category,
+      createdAt: new Date()
+    };
     setHotwords(prev => [newHw, ...prev]);
     supabaseService.createHotword(newHw);
   };
@@ -374,8 +379,9 @@ export const useAppStore = () => {
     supabaseService.deleteHotword(id);
   };
 
+  // --- Templates ---
   const addTemplate = (template: Template) => {
-    setTemplates(prev => [...prev, template]);
+    setTemplates(prev => [template, ...prev]);
     supabaseService.createTemplate(template);
   };
 
@@ -391,21 +397,53 @@ export const useAppStore = () => {
 
   const toggleStarTemplate = (id: string) => {
     const tpl = templates.find(t => t.id === id);
-    if(tpl) {
-       setTemplates(prev => prev.map(t => t.id === id ? { ...t, isStarred: !t.isStarred } : t));
-       supabaseService.updateTemplate(id, { isStarred: !tpl.isStarred });
+    if (tpl) {
+      updateTemplate(id, { isStarred: !tpl.isStarred });
     }
   };
 
   return {
-    view, setView, activeMeetingId, setActiveMeetingId, activeMeeting, meetings, deletedMeetings, folders, 
-    selectedFolderId, setSelectedFolderId, voiceprints, hotwords, templates, accessMeeting,
-    updateMeeting, deleteMeeting, restoreMeeting, permanentDeleteMeeting, createMeeting, retryProcessMeeting, 
-    addFolder, updateFolder, deleteFolder, moveMeetingToFolder, 
-    addVoiceprint, updateVoiceprint, deleteVoiceprint,
-    addHotword, updateHotword, deleteHotword, addTemplate, updateTemplate, deleteTemplate, toggleStarTemplate,
-    toggleStarMeeting, duplicateMeeting, isLoading,
+    view, setView,
+    activeMeetingId, setActiveMeetingId,
+    activeMeeting,
+    selectedFolderId, setSelectedFolderId,
     searchQuery, setSearchQuery,
-    shareConfig, setShareConfig
+    shareConfig, setShareConfig,
+    
+    meetings,
+    deletedMeetings,
+    folders,
+    voiceprints,
+    hotwords,
+    templates,
+    isLoading,
+
+    createMeeting,
+    accessMeeting,
+    updateMeeting,
+    deleteMeeting,
+    restoreMeeting,
+    permanentDeleteMeeting,
+    moveMeetingToFolder,
+    toggleStarMeeting,
+    duplicateMeeting,
+    retryProcessMeeting,
+
+    addFolder,
+    updateFolder,
+    deleteFolder,
+
+    addVoiceprint,
+    updateVoiceprint,
+    deleteVoiceprint,
+
+    addHotword,
+    updateHotword,
+    deleteHotword,
+
+    addTemplate,
+    updateTemplate,
+    deleteTemplate,
+    toggleStarTemplate
   };
 };

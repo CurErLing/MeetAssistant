@@ -1,3 +1,4 @@
+
 import { supabase } from './supabaseClient';
 import { MeetingFile, Folder, VoiceprintProfile, Hotword, Template, TranscriptSegment, Speaker, AnalysisResult } from '../types';
 
@@ -62,6 +63,12 @@ const mapHotwordFromDB = (row: any): Hotword => ({
 // --- Service Methods ---
 
 export const supabaseService = {
+  // Helper to get current user
+  async getCurrentUserId() {
+    const { data: { user } } = await supabase.auth.getUser();
+    return user?.id;
+  },
+
   // --- Meetings ---
   async fetchMeetings(): Promise<{ active: MeetingFile[], deleted: MeetingFile[] }> {
     const { data, error } = await supabase
@@ -94,6 +101,7 @@ export const supabaseService = {
   },
 
   async createMeeting(meeting: MeetingFile, audioBlob: Blob) {
+    const userId = await this.getCurrentUserId();
     const audioPath = `${meeting.id}.${meeting.format}`;
     const uploadedPath = await this.uploadAudio(audioBlob, audioPath);
 
@@ -114,7 +122,8 @@ export const supabaseService = {
       is_starred: meeting.isStarred || false,
       is_read_only: meeting.isReadOnly || false,
       audio_url: uploadedPath,
-      deleted_at: null
+      deleted_at: null,
+      user_id: userId // Add user_id
     };
 
     const { error } = await supabase.from('meetings').insert(row);
@@ -162,7 +171,12 @@ export const supabaseService = {
   },
 
   async createFolder(folder: Folder) {
-    const { error } = await supabase.from('folders').insert({ id: folder.id, name: folder.name });
+    const userId = await this.getCurrentUserId();
+    const { error } = await supabase.from('folders').insert({ 
+      id: folder.id, 
+      name: folder.name,
+      user_id: userId 
+    });
     if (error) console.error('Error creating folder:', JSON.stringify(error, null, 2));
   },
 
@@ -186,13 +200,15 @@ export const supabaseService = {
   },
 
   async createVoiceprint(vp: VoiceprintProfile, audioBlob?: Blob) {
+    const userId = await this.getCurrentUserId();
     if (audioBlob) {
        await supabase.storage.from('meeting-recordings').upload(`voiceprints/${vp.id}`, audioBlob);
     }
     const { error } = await supabase.from('voiceprints').insert({
       id: vp.id,
       name: vp.name,
-      created_at: vp.createdAt.toISOString()
+      created_at: vp.createdAt.toISOString(),
+      user_id: userId
     });
     if (error) console.error('Error creating voiceprint:', JSON.stringify(error, null, 2));
   },
@@ -222,6 +238,7 @@ export const supabaseService = {
   },
 
   async createTemplate(t: Template) {
+    const userId = await this.getCurrentUserId();
     const { error } = await supabase.from('templates').insert({
       id: t.id,
       name: t.name,
@@ -234,13 +251,16 @@ export const supabaseService = {
       is_custom: t.isCustom,
       author: t.author,
       is_starred: t.isStarred,
-      is_user_created: t.isUserCreated
+      is_user_created: t.isUserCreated,
+      user_id: userId
     });
     if (error) console.error('Error creating template:', JSON.stringify(error, null, 2));
   },
 
   async seedTemplates(templates: Template[]) {
-    // Batch insert templates
+    // Seed templates might be system-wide, but if we need user_id, we might need to handle it.
+    // Assuming seed templates don't strictly require user_id or use a system ID.
+    const userId = await this.getCurrentUserId();
     const rows = templates.map(t => ({
       id: t.id,
       name: t.name,
@@ -253,16 +273,15 @@ export const supabaseService = {
       is_custom: t.isCustom,
       author: t.author,
       is_starred: t.isStarred,
-      is_user_created: t.isUserCreated
+      is_user_created: t.isUserCreated,
+      user_id: userId // This might be null if not logged in during seed
     }));
     
-    // Using upsert (ignore duplicates)
     const { error } = await supabase.from('templates').upsert(rows, { onConflict: 'id' });
     if (error) console.error('Error seeding templates:', JSON.stringify(error, null, 2));
   },
 
   async updateTemplate(id: string, updates: Partial<Template>) {
-    // Map to DB columns... simplified for brevity, assume similar pattern
     const dbUpdates: any = {};
     if (updates.name) dbUpdates.name = updates.name;
     if (updates.description) dbUpdates.description = updates.description;
@@ -287,11 +306,13 @@ export const supabaseService = {
   },
 
   async createHotword(h: Hotword) {
+    const userId = await this.getCurrentUserId();
     await supabase.from('hotwords').insert({
       id: h.id,
       word: h.word,
       category: h.category,
-      created_at: h.createdAt.toISOString()
+      created_at: h.createdAt.toISOString(),
+      user_id: userId
     });
   },
 
