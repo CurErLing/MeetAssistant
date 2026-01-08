@@ -9,6 +9,10 @@ import { MeetingContent } from './MeetingContent';
 import { MeetingModals } from './MeetingModals';
 import { useMeetingDetailLogic } from '../../../hooks/useMeetingDetailLogic';
 
+/**
+ * 会议详情页主组件
+ * 包含：侧边栏、顶部导航、音频播放器、内容区域（转写/分析）以及各类弹窗
+ */
 export const MeetingDetailView = ({ 
   meeting, 
   meetingList = [], 
@@ -31,7 +35,7 @@ export const MeetingDetailView = ({
   onPreviewShare: (config: ShareConfig) => void
 }) => {
   
-  // Use Custom Hook for Logic
+  // 使用自定义 Hook 提取业务逻辑，保持视图层整洁
   const { state, setters, actions } = useMeetingDetailLogic({
     meeting,
     templates,
@@ -44,13 +48,22 @@ export const MeetingDetailView = ({
     isSpeakerListOpen, editingSpeakerId, isVoiceprintPickerOpen, isVoiceprintRecorderOpen, isShareModalOpen, voiceprintInitialName, isReadOnly 
   } = state;
 
+  // 计算当前显示的分析结果（如果是 'transcript' 模式则为 undefined）
   const currentAnalysis = meeting.analyses?.find(a => a.id === activeTab);
+  
+  // 仅在查看转写时显示音频播放器，选择模板时隐藏
   const showPlayer = !isSelectingTemplate && activeTab === 'transcript';
+
+  // 辅助函数：安全地获取当前编辑的发言人姓名
+  const getEditingSpeakerName = () => {
+    if (!editingSpeakerId || !meeting.speakers) return "";
+    return meeting.speakers[editingSpeakerId]?.name || "";
+  };
 
   return (
     <div className="flex h-full animate-fade-in w-full overflow-hidden bg-white sm:rounded-2xl sm:shadow-sm sm:border sm:border-slate-200">
       
-      {/* 1. Side Menu */}
+      {/* 1. 左侧：会议列表侧边栏 (Side Menu) */}
       <SideMenu 
         meetings={meetingList} 
         activeMeetingId={meeting.id} 
@@ -58,9 +71,10 @@ export const MeetingDetailView = ({
         onBack={onBack}
       />
 
-      {/* 2. Main Content Area */}
+      {/* 2. 右侧：主要内容区域 */}
       <div className="flex-1 flex flex-col h-full bg-white overflow-hidden relative min-w-0">
         
+        {/* 顶部标题栏 */}
         <DetailHeader 
           title={meeting.name}
           onBack={onBack}
@@ -75,6 +89,7 @@ export const MeetingDetailView = ({
           readOnly={isReadOnly}
         />
 
+        {/* 标签页导航 (Tabs) */}
         <DetailTabs 
           activeTab={activeTab}
           analyses={meeting.analyses || []}
@@ -97,6 +112,7 @@ export const MeetingDetailView = ({
           readOnly={isReadOnly}
         />
 
+        {/* 音频播放器 (Audio Editor) - 仅在转写页显示 */}
         {showPlayer && (
           <div className="flex-shrink-0 bg-white z-10">
               <AudioEditor 
@@ -114,6 +130,7 @@ export const MeetingDetailView = ({
           </div>
         )}
 
+        {/* 内容滚动区域：转写列表 或 分析结果 */}
         <div className="flex-1 overflow-hidden flex flex-col min-h-0 bg-white">
            <MeetingContent 
               isSelectingTemplate={isSelectingTemplate}
@@ -145,6 +162,7 @@ export const MeetingDetailView = ({
         </div>
       </div>
 
+      {/* 全局弹窗层：发言人编辑、声纹录入、分享等 */}
       {!isReadOnly && (
         <MeetingModals 
           isSpeakerListOpen={isSpeakerListOpen}
@@ -152,7 +170,7 @@ export const MeetingDetailView = ({
           onEditSpeaker={(id) => setters.setEditingSpeakerId(id)}
           
           editingSpeakerId={editingSpeakerId}
-          speakers={meeting.speakers}
+          speakers={meeting.speakers || {}} // 确保传入空对象防止崩溃
           onCloseEditSpeaker={() => setters.setEditingSpeakerId(null)}
           onUpdateSpeakerName={actions.updateSpeakerName}
           onOpenVoiceprintPicker={() => setters.setIsVoiceprintPickerOpen(true)}
@@ -167,7 +185,7 @@ export const MeetingDetailView = ({
           onCloseVoiceprintPicker={() => setters.setIsVoiceprintPickerOpen(false)}
           
           isVoiceprintRecorderOpen={isVoiceprintRecorderOpen}
-          initialVoiceprintName={voiceprintInitialName || (editingSpeakerId ? meeting.speakers[editingSpeakerId]?.name || "" : "")}
+          initialVoiceprintName={voiceprintInitialName || getEditingSpeakerName()}
           onSaveVoiceprint={actions.registerAndLinkVoiceprint}
           onCloseVoiceprintRecorder={() => {
             setters.setIsVoiceprintRecorderOpen(false);

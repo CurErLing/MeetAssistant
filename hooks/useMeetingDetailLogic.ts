@@ -10,23 +10,27 @@ interface UseMeetingDetailLogicProps {
   onRegisterVoiceprint: (name: string) => void;
 }
 
+/**
+ * 会议详情页的核心业务逻辑 Hook
+ * 作用：将复杂的 UI 状态管理和数据处理逻辑从视图层剥离
+ */
 export const useMeetingDetailLogic = ({
   meeting,
   templates,
   onUpdate,
   onRegisterVoiceprint
 }: UseMeetingDetailLogicProps) => {
-  // --- UI State ---
-  const [activeTab, setActiveTab] = useState<string>('transcript');
-  const [currentTime, setCurrentTime] = useState(0);
-  const [seekTarget, setSeekTarget] = useState<number | null>(null);
-  const [isSelectingTemplate, setIsSelectingTemplate] = useState(false);
+  // --- UI 状态 ---
+  const [activeTab, setActiveTab] = useState<string>('transcript'); // 当前选中的 Tab ('transcript' 或 analysisId)
+  const [currentTime, setCurrentTime] = useState(0);                // 当前音频播放进度
+  const [seekTarget, setSeekTarget] = useState<number | null>(null);// 音频跳转目标
+  const [isSelectingTemplate, setIsSelectingTemplate] = useState(false); // 是否正在选择 AI 模板
   
-  // --- Analysis State ---
-  const [replacingAnalysisId, setReplacingAnalysisId] = useState<string | null>(null);
-  const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);
+  // --- AI 分析状态 ---
+  const [replacingAnalysisId, setReplacingAnalysisId] = useState<string | null>(null); // 正在被替换的分析 ID
+  const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);     // 正在编辑的分析 ID
 
-  // --- Modal State ---
+  // --- 弹窗/模态框状态 ---
   const [isSpeakerListOpen, setIsSpeakerListOpen] = useState(false);
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [isVoiceprintPickerOpen, setIsVoiceprintPickerOpen] = useState(false);
@@ -36,7 +40,7 @@ export const useMeetingDetailLogic = ({
 
   const isReadOnly = meeting.isReadOnly === true;
 
-  // Reset state when meeting ID changes
+  // 当切换会议 ID 时，重置所有临时状态
   useEffect(() => {
     setActiveTab('transcript');
     setCurrentTime(0);
@@ -45,19 +49,24 @@ export const useMeetingDetailLogic = ({
     setEditingAnalysisId(null);
   }, [meeting.id]);
 
-  // --- Helper: Safely update speaker ---
+  // --- 核心辅助函数：安全更新发言人 ---
+  // 之前出现 "Cannot read properties of undefined" 的主要原因就是在更新时直接访问了不存在的 speaker 对象
   const updateSpeakerSafe = (speakerId: string, updates: Partial<Speaker>) => {
-    const existingSpeaker = meeting.speakers[speakerId];
+    // 确保 speakers 对象存在
+    const currentSpeakers = meeting.speakers || {};
+    const existingSpeaker = currentSpeakers[speakerId];
     
     if (existingSpeaker) {
+      // 情况 1: 发言人已存在，进行合并更新
       onUpdate({ 
         speakers: { 
-          ...meeting.speakers, 
+          ...currentSpeakers, 
           [speakerId]: { ...existingSpeaker, ...updates } 
         } 
       });
     } else {
-      // Create a default speaker if not exists to prevent corrupt data
+      // 情况 2: 发言人不存在（异常情况），创建一个默认对象，防止数据损坏
+      // 这是防御性编程的关键步骤
       const newSpeaker: Speaker = {
         id: speakerId,
         name: updates.name || "未知",
@@ -69,14 +78,14 @@ export const useMeetingDetailLogic = ({
       
       onUpdate({ 
         speakers: { 
-          ...meeting.speakers, 
+          ...currentSpeakers, 
           [speakerId]: newSpeaker
         } 
       });
     }
   };
 
-  // --- Actions ---
+  // --- Actions (业务动作) ---
 
   const updateMeetingTitle = (newName: string) => {
     if (isReadOnly) return;
@@ -89,6 +98,7 @@ export const useMeetingDetailLogic = ({
     setEditingSpeakerId(null);
   };
 
+  // 关联已有的声纹档案到当前发言人
   const linkVoiceprint = (vp: VoiceprintProfile) => {
     if (isReadOnly) return;
     if (editingSpeakerId) {
@@ -97,9 +107,10 @@ export const useMeetingDetailLogic = ({
     setIsVoiceprintPickerOpen(false);
   };
 
+  // 注册新声纹并立即关联
   const registerAndLinkVoiceprint = (newName: string) => {
     if (isReadOnly) return;
-    onRegisterVoiceprint(newName);
+    onRegisterVoiceprint(newName); // 调用全局 Store 的注册方法
     if (editingSpeakerId) {
        updateSpeakerSafe(editingSpeakerId, { name: newName, status: SpeakerStatus.REGISTERED });
     }
@@ -108,10 +119,11 @@ export const useMeetingDetailLogic = ({
     setVoiceprintInitialName("");
   };
 
+  // --- 核心业务：执行 AI 分析生成 ---
   const runAnalysisGeneration = async (analysisId: string, templateId: string, currentAnalyses: AnalysisResult[]) => {
     if (isReadOnly) return;
     
-    // 1. Optimistic Update
+    // 1. 乐观更新 (Optimistic Update)：先在 UI 上显示“处理中”状态，提升响应速度感知
     const updatedAnalyses = currentAnalyses.map(a => 
       a.id === analysisId ? { ...a, templateId, status: 'processing' as const, content: '' } : a
     );
@@ -121,37 +133,42 @@ export const useMeetingDetailLogic = ({
       const activeTemplate = templates.find(t => t.id === templateId) || templates[0];
       if (!meeting.transcript) throw new Error("No transcript found");
 
-      // 2. Call API
-      const summary = await generateMeetingSummary(meeting.transcript, meeting.speakers, activeTemplate);
+      // 2. 调用 Gemini 服务 (耗时操作)
+      // 注意：这里传入了 meeting.speakers || {} 以防 speakers 未定义
+      const summary = await generateMeetingSummary(meeting.transcript, meeting.speakers || {}, activeTemplate);
       
-      // 3. Success Update
+      // 3. 成功回调：更新内容并将状态设为 'ready'
       onUpdate({
         analyses: updatedAnalyses.map(a => 
           a.id === analysisId ? { ...a, content: summary, status: 'ready' as const } : a
         )
       });
     } catch (e) {
-      // 4. Error Update
+      // 4. 错误处理：将状态设为 'error'
+      console.error("Analysis generation failed", e);
       onUpdate({
         analyses: updatedAnalyses.map(a => a.id === analysisId ? { ...a, status: 'error' as const } : a)
       });
     }
   };
 
+  // 处理模板选择后的逻辑（新建分析或替换现有分析）
   const handleTemplateSelected = (templateId: string) => {
     if (isReadOnly) return;
     const currentAnalyses = meeting.analyses || [];
 
     if (replacingAnalysisId) {
+      // 替换现有分析视图
       runAnalysisGeneration(replacingAnalysisId, templateId, currentAnalyses);
       setReplacingAnalysisId(null);
     } else {
+      // 创建新分析视图
       const analysisId = `analysis_${Date.now()}`;
       const newAnalysis: AnalysisResult = { id: analysisId, templateId, content: "", status: 'processing' };
       const newList = [...currentAnalyses, newAnalysis];
       
       onUpdate({ analyses: newList });
-      setActiveTab(analysisId);
+      setActiveTab(analysisId); // 自动切换到新 Tab
       runAnalysisGeneration(analysisId, templateId, newList);
     }
     setIsSelectingTemplate(false);
@@ -175,7 +192,7 @@ export const useMeetingDetailLogic = ({
   const deleteAnalysis = (id: string) => {
     if (isReadOnly) return;
     onUpdate({ analyses: (meeting.analyses || []).filter(a => a.id !== id) });
-    if (activeTab === id) setActiveTab('transcript');
+    if (activeTab === id) setActiveTab('transcript'); // 如果删除了当前 Tab，回退到转写页
   };
 
   const updateTranscript = (updatedTranscript: TranscriptSegment[]) => {
@@ -184,7 +201,7 @@ export const useMeetingDetailLogic = ({
   };
 
   const handleDurationChange = (d: number) => {
-      // Only update if significantly different to avoid loops
+      // 只有当时长显著变化时才更新，防止浮点数精度导致的无限循环更新
       if (Math.abs(meeting.duration - d) > 1) {
           onUpdate({ duration: d });
       }

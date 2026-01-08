@@ -63,7 +63,7 @@ export const MeetingContent: React.FC<MeetingContentProps> = ({
     return (
       <TranscriptView 
         transcript={meeting.transcript || []}
-        speakers={meeting.speakers}
+        speakers={meeting.speakers || {}} 
         currentTime={currentTime}
         onUpdateTranscript={onUpdateTranscript}
         onSpeakerClick={onSpeakerClick}
