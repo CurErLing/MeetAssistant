@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { FileText, Sparkles } from 'lucide-react';
-import { MeetingFile, Template, ShareConfig } from '../../../types';
+import { MeetingFile, Template, ShareConfig, SpeakerStatus } from '../../../types';
 import { AudioEditor } from '../../audio-editor'; 
 import { ShareHeader } from './ShareHeader';
 import { TranscriptItem } from '../meeting/TranscriptItem';
@@ -145,7 +145,13 @@ export const ExternalShareView = ({
                       <TranscriptItem 
                         key={segment.id}
                         segment={segment}
-                        speaker={meeting.speakers[segment.speakerId]}
+                        speaker={meeting.speakers[segment.speakerId] || {
+                          id: segment.speakerId, 
+                          name: '未知', 
+                          color: 'text-slate-700', 
+                          defaultLabel: '发言人', 
+                          status: SpeakerStatus.UNKNOWN 
+                        }}
                         isActive={currentTime >= segment.startTime && currentTime <= segment.endTime}
                         onSeek={(t) => setSeekTarget(t)}
                         readOnly={true}

@@ -22,11 +22,13 @@ export const EditSpeakerModal = ({
   onOpenVoiceprintRecorder: (currentName: string) => void,
   onClose: () => void
 }) => {
-  const [name, setName] = useState(speaker.name);
+  const [name, setName] = useState(speaker?.name || "");
 
   useEffect(() => {
-    setName(speaker.name);
-  }, [speaker.name]);
+    if (speaker) setName(speaker.name);
+  }, [speaker]);
+
+  if (!speaker) return null;
 
   return (
     <BaseModal
@@ -93,7 +95,7 @@ export const VoiceprintPickerModal = ({
   const [searchTerm, setSearchTerm] = useState('');
 
   const filtered = voiceprints.filter(vp => 
-    vp.name.toLowerCase().includes(searchTerm.toLowerCase())
+    vp && vp.name && vp.name.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -243,7 +245,7 @@ export const SpeakerListModal = ({
   onEditSpeaker: (id: string) => void,
   onClose: () => void
 }) => {
-  const speakerList = Object.values(speakers);
+  const speakerList = Object.values(speakers || {});
 
   return (
     <BaseModal

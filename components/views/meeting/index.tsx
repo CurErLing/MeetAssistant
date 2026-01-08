@@ -167,7 +167,7 @@ export const MeetingDetailView = ({
           onCloseVoiceprintPicker={() => setters.setIsVoiceprintPickerOpen(false)}
           
           isVoiceprintRecorderOpen={isVoiceprintRecorderOpen}
-          initialVoiceprintName={voiceprintInitialName || (editingSpeakerId ? meeting.speakers[editingSpeakerId].name : "")}
+          initialVoiceprintName={voiceprintInitialName || (editingSpeakerId ? meeting.speakers[editingSpeakerId]?.name || "" : "")}
           onSaveVoiceprint={actions.registerAndLinkVoiceprint}
           onCloseVoiceprintRecorder={() => {
             setters.setIsVoiceprintRecorderOpen(false);

@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { MeetingFile, SpeakerStatus, Template, AnalysisResult, VoiceprintProfile, TranscriptSegment } from '../types';
+import { MeetingFile, SpeakerStatus, Template, AnalysisResult, VoiceprintProfile, TranscriptSegment, Speaker } from '../types';
 import { generateMeetingSummary } from '../services/geminiService';
 
 interface UseMeetingDetailLogicProps {
@@ -45,6 +45,37 @@ export const useMeetingDetailLogic = ({
     setEditingAnalysisId(null);
   }, [meeting.id]);
 
+  // --- Helper: Safely update speaker ---
+  const updateSpeakerSafe = (speakerId: string, updates: Partial<Speaker>) => {
+    const existingSpeaker = meeting.speakers[speakerId];
+    
+    if (existingSpeaker) {
+      onUpdate({ 
+        speakers: { 
+          ...meeting.speakers, 
+          [speakerId]: { ...existingSpeaker, ...updates } 
+        } 
+      });
+    } else {
+      // Create a default speaker if not exists to prevent corrupt data
+      const newSpeaker: Speaker = {
+        id: speakerId,
+        name: updates.name || "未知",
+        defaultLabel: "发言人",
+        status: updates.status || SpeakerStatus.IDENTIFIED,
+        color: updates.color || 'text-slate-700',
+        ...updates
+      };
+      
+      onUpdate({ 
+        speakers: { 
+          ...meeting.speakers, 
+          [speakerId]: newSpeaker
+        } 
+      });
+    }
+  };
+
   // --- Actions ---
 
   const updateMeetingTitle = (newName: string) => {
@@ -54,23 +85,14 @@ export const useMeetingDetailLogic = ({
 
   const updateSpeakerName = (id: string, newName: string) => {
     if (isReadOnly) return;
-    onUpdate({ speakers: { ...meeting.speakers, [id]: { ...meeting.speakers[id], name: newName } } });
+    updateSpeakerSafe(id, { name: newName });
     setEditingSpeakerId(null);
   };
 
   const linkVoiceprint = (vp: VoiceprintProfile) => {
     if (isReadOnly) return;
     if (editingSpeakerId) {
-      onUpdate({ 
-        speakers: { 
-          ...meeting.speakers, 
-          [editingSpeakerId]: { 
-            ...meeting.speakers[editingSpeakerId], 
-            name: vp.name, 
-            status: SpeakerStatus.REGISTERED 
-          } 
-        } 
-      });
+      updateSpeakerSafe(editingSpeakerId, { name: vp.name, status: SpeakerStatus.REGISTERED });
     }
     setIsVoiceprintPickerOpen(false);
   };
@@ -79,16 +101,7 @@ export const useMeetingDetailLogic = ({
     if (isReadOnly) return;
     onRegisterVoiceprint(newName);
     if (editingSpeakerId) {
-       onUpdate({ 
-        speakers: { 
-          ...meeting.speakers, 
-          [editingSpeakerId]: { 
-            ...meeting.speakers[editingSpeakerId], 
-            name: newName, 
-            status: SpeakerStatus.REGISTERED 
-          } 
-        } 
-      });
+       updateSpeakerSafe(editingSpeakerId, { name: newName, status: SpeakerStatus.REGISTERED });
     }
     setIsVoiceprintRecorderOpen(false);
     setEditingSpeakerId(null);
