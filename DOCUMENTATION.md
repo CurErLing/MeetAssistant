@@ -1,6 +1,21 @@
 
 # 积木会议助手 - 项目代码说明文档
 
+## 项目概览 (Project Overview)
+
+| 模块/分类 | 核心文件 | 功能描述 |
+| :--- | :--- | :--- |
+| **入口与配置** | `App.tsx`, `types.ts` | 应用路由、全局模态框挂载、核心数据类型定义。 |
+| **AI 服务** | `geminiService.ts` | 集成 Gemini API，实现音频转写 (Transcription) 和多维度智能分析 (Summary)。 |
+| **后端服务** | `supabaseService.ts` | 数据持久化 (CRUD)、云端存储、用户鉴权与团队协作逻辑。 |
+| **音频处理** | `audioUtils.ts`, `storage.ts` | 浏览器端音频剪辑、格式转换、利用 IndexedDB 存储音频 Blob。 |
+| **硬件互联** | `services/ble/*` | 封装 Web Bluetooth API，实现与录音硬件的协议通信与文件同步。 |
+| **状态管理** | `useAppStore.ts` | 全局状态容器，管理会议列表、文件夹结构，实现乐观 UI 更新。 |
+| **UI 架构** | `components/views/*` | 模块化视图组件，包含主页、播放详情页、管理后台等。 |
+| **业务逻辑** | `useMeetingDetailLogic.ts` | 抽离详情页复杂状态，处理播放控制、编辑模式与 AI 交互。 |
+
+---
+
 本文档详细介绍了项目的目录结构和各个文件的功能，旨在帮助开发者快速理解项目架构和业务逻辑。
 
 ## 1. 根目录文件

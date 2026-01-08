@@ -24,6 +24,7 @@ export const useAppStore = () => {
   const [shareConfig, setShareConfig] = useState<ShareConfig | null>(null);
   const [teamId, setTeamId] = useState<string>("");
   const [userId, setUserId] = useState<string | null>(null); // userId can be null if not logged in
+  const [userName, setUserName] = useState<string>(""); // 用户昵称
 
   // 数据状态
   const [meetings, setMeetings] = useState<MeetingFile[]>([]);
@@ -59,9 +60,6 @@ export const useAppStore = () => {
       // 检查并恢复默认模版
       let finalTemplates = fetchedTemplates;
       if (fetchedTemplates.length === 0) {
-        // Only seed if we have a user (though fetching templates usually handles null user for system templates)
-        // console.log("Templates empty, seeding defaults...");
-        // await supabaseService.seedTemplates(DEFAULT_TEMPLATES);
         finalTemplates = DEFAULT_TEMPLATES; 
       }
 
@@ -91,6 +89,14 @@ export const useAppStore = () => {
   // --- 初始化：检查登录状态并加载数据 ---
   useEffect(() => {
     const init = async () => {
+      // Initialize UserName
+      let storedName = localStorage.getItem('jimu_app_username');
+      if (!storedName) {
+        storedName = `积木用户${Math.floor(1000 + Math.random() * 9000)}`;
+        localStorage.setItem('jimu_app_username', storedName);
+      }
+      setUserName(storedName);
+
       const storedUserId = await supabaseService.getCurrentUserId();
       if (storedUserId) {
         setUserId(storedUserId);
@@ -125,8 +131,21 @@ export const useAppStore = () => {
     setView('home');
   };
 
-  const joinTeam = (newTeamId: string) => {
-    supabaseService.setTeamId(newTeamId);
+  const updateUserName = (name: string) => {
+    setUserName(name);
+    localStorage.setItem('jimu_app_username', name);
+  };
+
+  const joinTeam = async (newTeamId: string) => {
+    const success = await supabaseService.setTeamId(newTeamId);
+    if (success) {
+      setTeamId(newTeamId);
+      // Clear data to avoid mixing before new fetch completes
+      setMeetings([]);
+      setFolders([]);
+      // Fetch new team data
+      await fetchAllData();
+    }
   };
 
   const accessMeeting = (id: string) => {
@@ -489,7 +508,9 @@ export const useAppStore = () => {
     isLoading,
     teamId, // Export Team ID
     userId, // Export User ID
-
+    userName, // Export User Name
+    
+    updateUserName,
     login,
     logout,
     joinTeam, // Export Team Switcher

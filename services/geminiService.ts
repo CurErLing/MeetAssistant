@@ -35,9 +35,8 @@ export const transcribeAudio = async (file: File | null, options?: TranscribeOpt
   // 1. 检查 API Key 及文件
   const ai = getGeminiClient();
   if (!ai || !file) {
-    // 降级策略：如果没有 Key，返回模拟数据以方便 UI 调试
-    await new Promise(resolve => setTimeout(resolve, 2000)); // 模拟网络延迟
-    return generateMockTranscript(options?.end || 30, options?.start || 0);
+    // 既然要求不使用假数据，这里直接抛出错误，以便 UI 显示失败状态并允许重试
+    throw new Error("未配置 Google Gemini API Key 或文件为空");
   }
 
   try {
@@ -85,8 +84,8 @@ export const transcribeAudio = async (file: File | null, options?: TranscribeOpt
     }));
   } catch (error) {
     console.error("Transcription error:", error);
-    // 错误处理：发生异常时降级为模拟数据，保证 App 不挂死
-    return generateMockTranscript(options?.end || 30, options?.start || 0); 
+    // 抛出错误，以便上层应用处理为 Error 状态
+    throw error;
   }
 };
 
@@ -105,8 +104,8 @@ export const generateMeetingSummary = async (
   // 1. 检查 API Key
   const ai = getGeminiClient();
   if (!ai) {
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    return `# 模拟会议总结\n\n**模拟摘要内容...**\n\n这是一段由于未配置 API Key 而显示的模拟文本。请在 .env 文件中配置您的 Google Gemini API Key 以获得真实分析结果。`;
+    // 对于分析功能，如果没有 Key，也应当提示而不是给假数据，保持一致性
+    return "API Key 未配置，无法生成分析。";
   }
 
   try {

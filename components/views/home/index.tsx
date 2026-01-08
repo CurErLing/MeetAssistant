@@ -8,6 +8,7 @@ import { useMeetingModals } from '../../../hooks/useMeetingModals';
 import { useFolderModals } from '../../../hooks/useFolderModals';
 
 interface HomeViewProps {
+  userName: string;
   meetings: MeetingFile[];
   folders: Folder[];
   templates: Template[];
@@ -35,6 +36,7 @@ interface HomeViewProps {
 }
 
 export const HomeView: React.FC<HomeViewProps> = ({
+  userName,
   meetings,
   folders,
   templates,
@@ -85,6 +87,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       {/* 1. Header Section */}
       <HomeHeader 
+        userName={userName}
         onTriggerHardwareSync={onTriggerHardwareSync}
         onTriggerUpload={onTriggerUpload}
         onStartRecording={onStartRecording}

@@ -204,9 +204,11 @@ const App = () => {
           store.setView('profile');
           store.setSelectedFolderId(null);
         }}
+        userName={store.userName}
       >
           {store.view === 'home' && (
             <HomeView 
+              userName={store.userName}
               meetings={meetingsToShow} // Uses filtered list if search is active
               folders={store.folders}
               templates={store.templates} 
@@ -340,8 +342,10 @@ const App = () => {
           {store.view === 'profile' && (
             <ProfileView 
               userId={store.userId || ''}
+              userName={store.userName}
               teamId={store.teamId}
               onSwitchTeam={store.joinTeam}
+              onUpdateName={store.updateUserName}
               onLogout={store.logout}
             />
           )}

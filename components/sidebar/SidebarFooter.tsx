@@ -11,6 +11,7 @@ interface SidebarFooterProps {
   teamId?: string;
   onSwitchTeam?: (id: string) => void;
   onProfileClick?: () => void;
+  userName: string;
 }
 
 export const SidebarFooter: React.FC<SidebarFooterProps> = ({
@@ -19,7 +20,8 @@ export const SidebarFooter: React.FC<SidebarFooterProps> = ({
   onCloseMobileMenu,
   teamId,
   onSwitchTeam,
-  onProfileClick
+  onProfileClick,
+  userName
 }) => {
   return (
     <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-4">
@@ -48,7 +50,7 @@ export const SidebarFooter: React.FC<SidebarFooterProps> = ({
        
        {/* User Profile Component */}
        <UserProfile 
-         name="邱" 
+         name={userName} 
          role="Pro 版本" 
          teamId={teamId}
          onSwitchTeam={onSwitchTeam}

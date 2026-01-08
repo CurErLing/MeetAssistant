@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, RotateCcw } from 'lucide-react';
 import { MeetingFile, Folder } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { formatTime } from '../../../utils/formatUtils';
@@ -122,6 +122,7 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
            <tbody className="divide-y divide-slate-100">
              {displayList.length > 0 ? displayList.map((meeting) => {
                const isProcessing = meeting.status === 'processing';
+               const isError = meeting.status === 'error';
                const ownerName = meeting.isReadOnly ? getMockOwner(meeting.id) : '我';
                
                return (
@@ -153,7 +154,22 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
                       </div>
                    </td>
                    <td className="px-6 py-4">
-                      <StatusBadge status={meeting.status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={meeting.status} />
+                        {isError && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleMeetingAction(meeting, 'retry');
+                            }}
+                            className="p-1 text-blue-600 hover:bg-blue-50 rounded-full transition-colors flex items-center gap-1 text-[10px] font-bold"
+                            title="重试转写"
+                          >
+                            <RotateCcw size={12} />
+                            重试
+                          </button>
+                        )}
+                      </div>
                    </td>
                    <td className="px-6 py-4 text-right relative">
                       <MeetingActionDropdown 

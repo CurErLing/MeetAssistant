@@ -64,23 +64,26 @@ const mapHotwordFromDB = (row: any): Hotword => ({
 
 export const supabaseService = {
   // Helper to ensure valid UUID
+  generateUUID(): string {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+    // Fallback for non-secure contexts
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+  },
+
   _ensureUUID(id: string | null): string {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     if (!id || !isUUID(id)) {
-      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-      } else {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
-        });
-      }
+      return this.generateUUID();
     }
     return id;
   },
 
   // Helper: Generate a consistent UUID from a string (e.g., email or phone)
-  // This simulates a consistent user ID for "Login" without a real backend auth provider setup
   async _generateUUIDFromString(input: string): Promise<string> {
     const encoder = new TextEncoder();
     const data = encoder.encode(input + "_salt_jimu");
@@ -124,19 +127,22 @@ export const supabaseService = {
   // Helper to get current TEAM ID (Scope)
   async getCurrentTeamId() {
     const STORAGE_KEY = 'jimu_app_team_id';
-    let teamId = localStorage.getItem(STORAGE_KEY);
-    teamId = this._ensureUUID(teamId);
-    localStorage.setItem(STORAGE_KEY, teamId);
-    return teamId;
+    // Don't force generate. If empty, return empty string.
+    return localStorage.getItem(STORAGE_KEY) || '';
   },
 
   // Allow switching teams (UI only for now)
-  async setTeamId(newTeamId: string) {
-    if (newTeamId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newTeamId)) {
+  async setTeamId(newTeamId: string): Promise<boolean> {
+    if (!newTeamId) {
+        localStorage.removeItem('jimu_app_team_id');
+        return true;
+    }
+    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newTeamId)) {
         localStorage.setItem('jimu_app_team_id', newTeamId);
-        window.location.reload();
+        return true;
     } else {
         alert("无效的 Team ID 格式 (必须是 UUID)");
+        return false;
     }
   },
 
@@ -147,11 +153,14 @@ export const supabaseService = {
     if (!userId) return { active: [], deleted: [] };
 
     // Fetch user's own meetings OR meetings shared in the team
-    const { data, error } = await supabase
-      .from('meetings')
-      .select('*')
-      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('meetings').select('*');
+    if (teamId) {
+        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+    } else {
+        query = query.eq('user_id', userId);
+    }
+    
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching meetings:', JSON.stringify(error, null, 2));
@@ -205,7 +214,7 @@ export const supabaseService = {
       audio_url: uploadedPath,
       deleted_at: null,
       user_id: userId,
-      team_id: teamId
+      team_id: teamId || null
     };
 
     const { error } = await supabase.from('meetings').insert(row);
@@ -245,10 +254,14 @@ export const supabaseService = {
     const teamId = await this.getCurrentTeamId();
     if (!userId) return [];
 
-    const { data, error } = await supabase
-      .from('folders')
-      .select('*')
-      .or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+    let query = supabase.from('folders').select('*');
+    if (teamId) {
+        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+    } else {
+        query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query;
       
     if (error) {
       console.error('Error fetching folders:', JSON.stringify(error, null, 2));
@@ -267,7 +280,7 @@ export const supabaseService = {
       id: folder.id, 
       name: folder.name,
       user_id: userId,
-      team_id: teamId
+      team_id: teamId || null
     });
     if (error) console.error('Error creating folder:', JSON.stringify(error, null, 2));
   },
@@ -287,11 +300,14 @@ export const supabaseService = {
     const teamId = await this.getCurrentTeamId();
     if (!userId) return [];
 
-    const { data, error } = await supabase
-      .from('voiceprints')
-      .select('*')
-      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('voiceprints').select('*');
+    if (teamId) {
+        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+    } else {
+        query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
       console.error('Error fetching voiceprints:', JSON.stringify(error, null, 2));
@@ -314,7 +330,7 @@ export const supabaseService = {
       name: vp.name,
       created_at: vp.createdAt.toISOString(),
       user_id: userId,
-      team_id: teamId
+      team_id: teamId || null
     });
     if (error) console.error('Error creating voiceprint:', JSON.stringify(error, null, 2));
   },
@@ -350,7 +366,11 @@ export const supabaseService = {
     let query = supabase.from('templates').select('*');
     
     if (userId) {
-        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId},user_id.is.null`);
+        if (teamId) {
+            query = query.or(`user_id.eq.${userId},team_id.eq.${teamId},user_id.is.null`);
+        } else {
+            query = query.or(`user_id.eq.${userId},user_id.is.null`);
+        }
     } else {
         query = query.is('user_id', null);
     }
@@ -383,7 +403,7 @@ export const supabaseService = {
       is_starred: t.isStarred,
       is_user_created: t.isUserCreated,
       user_id: userId,
-      team_id: teamId
+      team_id: teamId || null
     });
     if (error) console.error('Error creating template:', JSON.stringify(error, null, 2));
   },
@@ -430,11 +450,14 @@ export const supabaseService = {
     const teamId = await this.getCurrentTeamId();
     if (!userId) return [];
 
-    const { data, error } = await supabase
-      .from('hotwords')
-      .select('*')
-      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
-      .order('created_at', { ascending: false });
+    let query = supabase.from('hotwords').select('*');
+    if (teamId) {
+        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+    } else {
+        query = query.eq('user_id', userId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
 
     if (error) {
        console.error('Error fetching hotwords:', JSON.stringify(error, null, 2));
@@ -454,7 +477,7 @@ export const supabaseService = {
       category: h.category,
       created_at: h.createdAt.toISOString(),
       user_id: userId,
-      team_id: teamId
+      team_id: teamId || null
     });
   },
 

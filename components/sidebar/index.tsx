@@ -27,12 +27,14 @@ interface SidebarProps {
   teamId?: string;
   onSwitchTeam?: (id: string) => void;
   onProfileClick?: () => void;
+  userName: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView, onChangeView, isHardwareConnecting, onConnectHardware,
   meetingsCount, deletedCount, folders, onAddFolder, selectedFolderId, onSelectFolder,
-  onRenameFolder, onDeleteFolder, onShareFolder, teamId, onSwitchTeam, onProfileClick
+  onRenameFolder, onDeleteFolder, onShareFolder, teamId, onSwitchTeam, onProfileClick,
+  userName
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -127,6 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           teamId={teamId}
           onSwitchTeam={onSwitchTeam}
           onProfileClick={onProfileClick}
+          userName={userName}
         />
     </div>
   );

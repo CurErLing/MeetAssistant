@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Cpu, Calendar, Clock, Users, Star, Inbox, Folder } from 'lucide-react';
+import { Cpu, Calendar, Clock, Users, Star, Inbox, Folder, RotateCcw } from 'lucide-react';
 import { MeetingFile, Folder as FolderType } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { MeetingActionDropdown } from '../../common/MeetingActionDropdown';
@@ -41,6 +41,7 @@ export const MeetingTableRow: React.FC<MeetingTableRowProps> = ({
   };
 
   const isProcessing = meeting.status === 'processing';
+  const isError = meeting.status === 'error';
   const isHardware = meeting.name.toLowerCase().startsWith('hardware') || meeting.id.includes('hardware');
   const ownerName = getOwnerName(meeting);
   const folderInfo = getFolderInfo(meeting.folderId);
@@ -101,7 +102,22 @@ export const MeetingTableRow: React.FC<MeetingTableRowProps> = ({
         </div>
       </td>
       <td className="px-6 py-4">
-        <StatusBadge status={meeting.status} />
+        <div className="flex items-center gap-2">
+          <StatusBadge status={meeting.status} />
+          {isError && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onAction(meeting, 'retry');
+              }}
+              className="p-1 text-blue-600 hover:bg-blue-50 rounded-full transition-colors flex items-center gap-1 text-[10px] font-bold"
+              title="重试转写"
+            >
+              <RotateCcw size={12} />
+              重试
+            </button>
+          )}
+        </div>
       </td>
       <td className="px-6 py-4 text-right relative">
         <MeetingActionDropdown 

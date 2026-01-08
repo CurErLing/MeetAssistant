@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Cpu, Calendar, Clock, MoreVertical, Users, User, Star, Inbox, Folder } from 'lucide-react';
+import { Cpu, Calendar, Clock, MoreVertical, Users, User, Star, Inbox, Folder, RotateCcw } from 'lucide-react';
 import { MeetingFile, Folder as FolderType } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { MeetingActionMenu } from '../../common/MeetingActionMenu';
@@ -41,6 +41,7 @@ export const MeetingMobileCard: React.FC<MeetingMobileCardProps> = ({
   };
 
   const isProcessing = meeting.status === 'processing';
+  const isError = meeting.status === 'error';
   const isHardware = meeting.name.toLowerCase().startsWith('hardware');
   const isActive = activeMenuId === meeting.id;
   const ownerName = getOwnerName(meeting);
@@ -101,9 +102,20 @@ export const MeetingMobileCard: React.FC<MeetingMobileCardProps> = ({
           </div>
        </div>
 
-       {/* Status */}
-       <div>
+       {/* Status & Retry */}
+       <div className="flex items-center justify-between">
           <StatusBadge status={meeting.status} />
+          {isError && (
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                onAction(meeting, 'retry');
+              }}
+              className="px-2 py-1 bg-blue-50 text-blue-600 rounded-lg text-xs font-bold flex items-center gap-1"
+            >
+              <RotateCcw size={12} /> 重试
+            </button>
+          )}
        </div>
 
        {/* Mobile Action Menu (Overlay) */}

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mic, Mail, Smartphone, ArrowRight, ShieldCheck, Lock } from 'lucide-react';
 import { Button } from '../../common/Button';
 
@@ -10,14 +10,53 @@ interface AuthViewProps {
 export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
   const [method, setMethod] = useState<'phone' | 'email'>('phone');
   const [identifier, setIdentifier] = useState('');
-  const [password, setPassword] = useState(''); // Only for visual, logic uses identifier as key in this mock
+  const [password, setPassword] = useState(''); 
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+
+  // Timer effect
+  useEffect(() => {
+    let timer: number;
+    if (countdown > 0) {
+      timer = window.setInterval(() => {
+        setCountdown(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [countdown]);
+
+  const handleSwitchMethod = (newMethod: 'phone' | 'email') => {
+    setMethod(newMethod);
+    setIdentifier('');
+    setPassword('');
+    setCode('');
+    setCountdown(0);
+  };
+
+  const handleGetCode = () => {
+    if (!identifier.trim()) {
+      // Allow a simple check or show UI feedback
+      return;
+    }
+    setCountdown(60);
+    // Auto-fill for demo purposes
+    setCode('123456'); 
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!identifier.trim()) return;
     
+    // Basic mock validation
+    if (method === 'phone' && !code) {
+        // Ideally show error state
+        return;
+    }
+    if (method === 'email' && !password) {
+        return;
+    }
+
     setIsSubmitting(true);
     // Simulate network delay
     setTimeout(() => {
@@ -43,13 +82,13 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
          {/* Tabs */}
          <div className="flex border-b border-slate-100">
             <button 
-              onClick={() => setMethod('phone')}
+              onClick={() => handleSwitchMethod('phone')}
               className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-colors ${method === 'phone' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
             >
                <Smartphone size={18} /> 手机号登录
             </button>
             <button 
-              onClick={() => setMethod('email')}
+              onClick={() => handleSwitchMethod('email')}
               className={`flex-1 py-4 text-sm font-bold flex items-center justify-center gap-2 transition-colors ${method === 'email' ? 'text-blue-600 bg-blue-50/50 border-b-2 border-blue-600' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
             >
                <Mail size={18} /> 邮箱登录
@@ -71,6 +110,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             placeholder="请输入手机号"
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
+                            autoFocus
                             required
                           />
                        </div>
@@ -84,9 +124,15 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             placeholder="123456"
                             value={code}
                             onChange={(e) => setCode(e.target.value)}
+                            required
                           />
-                          <button type="button" className="px-4 py-2 bg-slate-100 text-slate-600 font-bold text-xs rounded-xl hover:bg-slate-200 transition-colors whitespace-nowrap">
-                             获取验证码
+                          <button 
+                            type="button" 
+                            onClick={handleGetCode}
+                            disabled={!identifier || countdown > 0}
+                            className={`px-4 py-2 font-bold text-xs rounded-xl transition-colors whitespace-nowrap min-w-[100px] ${(!identifier || countdown > 0) ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}
+                          >
+                             {countdown > 0 ? `${countdown}s 后重试` : '获取验证码'}
                           </button>
                        </div>
                     </div>
@@ -102,6 +148,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             placeholder="name@example.com"
                             value={identifier}
                             onChange={(e) => setIdentifier(e.target.value)}
+                            autoFocus
                             required
                           />
                        </div>
@@ -116,6 +163,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             placeholder="请输入密码"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
+                            required
                           />
                        </div>
                     </div>
@@ -127,7 +175,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                  type="submit" 
                  className="w-full h-12 text-base shadow-lg shadow-blue-200 mt-2" 
                  isLoading={isSubmitting}
-                 disabled={!identifier}
+                 disabled={!identifier || (method === 'phone' && !code) || (method === 'email' && !password)}
                  icon={<ArrowRight size={20} />}
                >
                  {method === 'phone' ? '登录 / 注册' : '登录'}
