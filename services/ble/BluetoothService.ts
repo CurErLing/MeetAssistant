@@ -1,5 +1,6 @@
 
-import { BLE_UUIDS, DATA_TYPES, CMD, buildPacket, parsePacket, Packet } from './protocol';
+import { convertToWav } from '../audioUtils';
+import { BLE_UUIDS, CMD, DATA_TYPES, Packet, buildPacket, parsePacket } from './protocol';
 
 // ... (Web Bluetooth Interfaces - omitted for brevity) ...
 interface BluetoothCharacteristicProperties {
@@ -338,24 +339,24 @@ class BluetoothService {
     }
   }
 
-  private handleDataNotification = (event: Event) => {
+  private handleDataNotification = async (event: Event) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
     const value = target.value;
     if (!value) return;
 
     const newData = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     this.dataBuffer = this.appendBuffer(this.dataBuffer, newData);
-    this.processBuffer(this.dataBuffer, (newBuff) => this.dataBuffer = newBuff);
+    await this.processBuffer(this.dataBuffer, (newBuff) => this.dataBuffer = newBuff);
   };
 
-  private handleStatusNotification = (event: Event) => {
+  private handleStatusNotification = async (event: Event) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
     const value = target.value;
     if (!value) return;
 
     const newData = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     this.statusBuffer = this.appendBuffer(this.statusBuffer, newData);
-    this.processBuffer(this.statusBuffer, (newBuff) => this.statusBuffer = newBuff);
+    await this.processBuffer(this.statusBuffer, (newBuff) => this.statusBuffer = newBuff);
   };
 
   private appendBuffer(buffer: Uint8Array, newData: Uint8Array): Uint8Array {
@@ -365,9 +366,8 @@ class BluetoothService {
     return newBuffer;
   }
 
-  private processBuffer(buffer: Uint8Array, setBuffer: (b: Uint8Array) => void) {
+  private async processBuffer(buffer: Uint8Array, setBuffer: (b: Uint8Array) => void) {
     let currentBuffer = buffer;
-
     while (currentBuffer.length >= 6) {
       if (currentBuffer[0] !== 0x5A) {
         let start = 1;
@@ -390,7 +390,7 @@ class BluetoothService {
       const packet = parsePacket(new DataView(packetBytes.buffer));
 
       if (packet) {
-        this.handlePacket(packet);
+        await this.handlePacket(packet);
       }
 
       currentBuffer = currentBuffer.slice(totalPacketLen);
@@ -399,7 +399,7 @@ class BluetoothService {
     setBuffer(currentBuffer);
   }
 
-  private handlePacket(packet: Packet) {
+  private async handlePacket(packet: Packet) {
     if (packet.payload.length < 2) return;
 
     const type = packet.payload[0];
@@ -415,7 +415,7 @@ class BluetoothService {
     if (type === DATA_TYPES.CONTROL) {
        this.handleControlCommand(cmd, data);
     } else if (type === DATA_TYPES.FILE_TRANSFER) {
-       this.handleFileCommand(cmd, data);
+       await this.handleFileCommand(cmd, data);
     }
   }
 
@@ -446,7 +446,7 @@ class BluetoothService {
     }
   }
 
-  private handleFileCommand(cmd: number, data: Uint8Array) {
+  private async handleFileCommand(cmd: number, data: Uint8Array) {
     if (cmd === CMD.START_IMPORT_FILE) {
         console.log("Device started sending file data.");
         this.resetDownloadWatchdog(); // Ensure watchdog is active when import starts
@@ -463,7 +463,7 @@ class BluetoothService {
     } else if (cmd === CMD.IMPORT_COMPLETE) {
       const status = data.length > 0 ? data[0] : 0;
       if (status === 0) {
-         this.finishDownload();
+         await this.finishDownload();
       } else {
          console.warn("Hardware import failed with status:", status);
          if (this.onFileDownloadError) {
@@ -590,19 +590,10 @@ class BluetoothService {
     }
   }
 
-  private finishDownload() {
+  private async finishDownload() {
     if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
     
     if (this.currentDownloadFile && this.onFileDownloadComplete) {
-      const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
-      const combinedData = new Uint8Array(totalSize);
-      let offset = 0;
-      for (const chunk of this.currentDownloadFile.data) {
-        combinedData.set(chunk, offset);
-        offset += chunk.length;
-      }
-
-      let finalData = combinedData;
       let fileName = this.currentDownloadFile.name;
       
       if (!fileName.includes('.')) {
@@ -610,8 +601,17 @@ class BluetoothService {
       }
       
       const mimeType = this.getMimeType(fileName);
+      let file: File;
 
       if (mimeType === 'audio/wav') {
+         const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
+         let finalData = new Uint8Array(totalSize);
+         let offset = 0;
+         for (const chunk of this.currentDownloadFile.data) {
+           finalData.set(chunk, offset);
+           offset += chunk.length;
+         }
+
          const hasRIFF = finalData.length >= 4 && 
                          finalData[0] === 0x52 && 
                          finalData[1] === 0x49 && 
@@ -620,12 +620,40 @@ class BluetoothService {
          
          if (!hasRIFF) {
             console.warn("Detected raw PCM data without header, adding WAV header.");
-            finalData = this.addWavHeader(combinedData, 16000, 1, 16);
+            const wavData = this.addWavHeader(finalData, 16000, 1, 16);
+            finalData = new Uint8Array(wavData.buffer as ArrayBuffer);
          }
+         const blob = new Blob([finalData], { type: mimeType }); 
+         file = new File([blob], fileName, { type: mimeType });
+      } else if (mimeType === 'audio/ogg' || mimeType === 'audio/webm' || fileName.endsWith('.opus') || fileName.endsWith('.webm')) {
+         console.log(`Converting Opus/WebM chunks (${this.currentDownloadFile.data.length}) to WAV...`);
+         
+         // Try to convert, pass the expected mimeType to help the converter
+         // If it's technically opus but in a webm container, the mimeType should ideally be audio/webm
+         const sourceMime = mimeType === 'audio/mpeg' ? 'audio/webm' : mimeType; 
+         
+         const convertedFile = await convertToWav(this.currentDownloadFile.data, sourceMime);
+         
+         // Check if conversion succeeded (it returns audio/wav on success)
+         if (convertedFile.type === 'audio/wav') {
+             const newName = fileName.replace(/\.[^/.]+$/, "") + ".wav";
+             file = new File([convertedFile], newName, { type: 'audio/wav' });
+         } else {
+             // Fallback: Use the original file data/type to avoid "no supported sources" error
+             // Do NOT rename to .wav if it's still webm/ogg
+             file = new File([convertedFile], fileName, { type: convertedFile.type });
+         }
+      } else {
+         const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
+         const combinedData = new Uint8Array(totalSize);
+         let offset = 0;
+         for (const chunk of this.currentDownloadFile.data) {
+           combinedData.set(chunk, offset);
+           offset += chunk.length;
+         }
+         const blob = new Blob([combinedData], { type: mimeType }); 
+         file = new File([blob], fileName, { type: mimeType });
       }
-
-      const blob = new Blob([finalData], { type: mimeType }); 
-      const file = new File([blob], fileName, { type: mimeType });
       
       this.onFileDownloadComplete(file);
       this.currentDownloadFile = null;

@@ -1,6 +1,6 @@
 
-import { useState, useCallback, useEffect } from 'react';
-import { bluetoothService, DeviceFileInfo } from '../services/ble/BluetoothService';
+import { useCallback, useEffect, useState } from 'react';
+import { bluetoothService } from '../services/ble/BluetoothService';
 import { formatTime } from '../utils/formatUtils';
 
 export interface HardwareFile {
@@ -100,6 +100,7 @@ export const useHardwareSync = (
                 fileData.rawSize,
                 (pct) => setTransferProgress(pct),
                 (file) => {
+                  debugger
                     onCreateMeeting(file, { isBatch });
                     resolve();
                 },
