@@ -72,7 +72,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             onClick={() => handleViewChange('home')} 
           />
 
-          {/* 2. All Files (Moved below Home) */}
+          {/* 2. All Files */}
           <SidebarNavItem 
               icon={<FolderIcon size={20} />} 
               label="全部会议" 
@@ -84,7 +84,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
               count={meetingsCount} 
             />
 
-          {/* 3. Folders */}
+          {/* 3. Recycle Bin (Moved here) */}
+          <SidebarNavItem 
+            icon={<Trash2 size={20} />} 
+            label="回收站" 
+            isActive={currentView === 'recycle-bin'} 
+            onClick={() => handleViewChange('recycle-bin')} 
+            count={deletedCount} 
+          />
+
+          {/* 4. Folders */}
           <FolderSection 
              folders={folders}
              selectedFolderId={selectedFolderId}
@@ -97,24 +106,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
              onToggle={setIsFolderOpen}
           />
 
-          {/* 4. Knowledge Base (Templates, Voiceprints, Hotwords) */}
+          {/* 5. Knowledge Base (Templates, Voiceprints, Hotwords) */}
           <KnowledgeSection 
             currentView={currentView}
             onChangeView={handleViewChange}
             isOpen={isKnowledgeOpen}
             onToggle={setIsKnowledgeOpen}
           />
-
-          {/* 5. Recycle Bin (Separated) */}
-          <div className="mt-8 mb-6">
-            <SidebarNavItem 
-              icon={<Trash2 size={20} />} 
-              label="回收站" 
-              isActive={currentView === 'recycle-bin'} 
-              onClick={() => handleViewChange('recycle-bin')} 
-              count={deletedCount} 
-            />
-          </div>
         </nav>
 
         <SidebarFooter 

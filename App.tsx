@@ -55,7 +55,7 @@ const App = () => {
       }
     },
     () => {
-      store.setSelectedFolderId(null);
+      // Do not reset folder selection here, stay in current context
       store.setView('list');
     }
   );
@@ -75,7 +75,7 @@ const App = () => {
       // Use the tracked source
       store.createMeeting(file, trimStart, trimEnd, pendingFileSource); 
       setPendingFile(null);
-      store.setSelectedFolderId(null);
+      // Do not reset folder selection, keep user in current folder if set
       store.setView('list'); 
     } 
   };
@@ -83,7 +83,7 @@ const App = () => {
   const handleSaveRecording = (file: File) => {
     store.createMeeting(file, 0, 0, 'recording');
     setIsWebRecorderOpen(false);
-    store.setSelectedFolderId(null);
+    // Do not reset folder selection
     store.setView('list');
   };
 

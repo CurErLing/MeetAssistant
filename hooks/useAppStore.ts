@@ -227,6 +227,15 @@ export const useAppStore = () => {
       setDeletedMeetings(prev => [{ ...meetingToDelete, deletedAt }, ...prev]);
       setMeetings(prev => prev.filter(m => m.id !== id));
       
+      // Update folders state to remove this meeting ID and update count
+      if (meetingToDelete.folderId) {
+         setFolders(prev => prev.map(f =>
+           f.id === meetingToDelete.folderId
+             ? { ...f, meetingIds: f.meetingIds.filter(mid => mid !== id) }
+             : f
+         ));
+      }
+
       if (activeMeetingId === id) {
         setActiveMeetingId(null);
         if (view === 'detail') setView('home');
@@ -244,6 +253,15 @@ export const useAppStore = () => {
       const { deletedAt, ...rest } = meetingToRestore;
       setMeetings(prev => [rest, ...prev]);
       setDeletedMeetings(prev => prev.filter(m => m.id !== id));
+
+      // Update folders state to add this meeting ID back (if it belongs to a folder)
+      if (rest.folderId) {
+         setFolders(prev => prev.map(f =>
+           f.id === rest.folderId
+             ? { ...f, meetingIds: [...f.meetingIds, id] }
+             : f
+         ));
+      }
 
       if (!id.startsWith('mock_')) {
         supabaseService.updateMeeting(id, { deletedAt: undefined }); // 恢复，即清除 deletedAt

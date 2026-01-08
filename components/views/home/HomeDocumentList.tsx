@@ -7,6 +7,7 @@ import { formatTime } from '../../../utils/formatUtils';
 import { MeetingActionDropdown } from '../../common/MeetingActionDropdown';
 import { MeetingMeta } from '../../common/MeetingMeta';
 import { useMeetingModals } from '../../../hooks/useMeetingModals';
+import { getOwnerName } from '../../../utils/meetingUtils';
 
 interface HomeDocumentListProps {
   meetings: MeetingFile[];
@@ -63,12 +64,6 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
         .sort((a, b) => b.uploadDate.getTime() - a.uploadDate.getTime());
   }
 
-  const getMockOwner = (id: string) => {
-      const hash = id.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-      const owners = ['雷军', '张小龙', 'Tim Cook', '产品总监', 'CTO', '王兴'];
-      return owners[hash % owners.length];
-  };
-
   const handleItemClick = (id: string, isProcessing: boolean) => {
     if (!isProcessing) onSelectMeeting(id);
   };
@@ -123,7 +118,7 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
              {displayList.length > 0 ? displayList.map((meeting) => {
                const isProcessing = meeting.status === 'processing';
                const isError = meeting.status === 'error';
-               const ownerName = meeting.isReadOnly ? getMockOwner(meeting.id) : '我';
+               const ownerName = getOwnerName(meeting);
                
                return (
                  <tr 

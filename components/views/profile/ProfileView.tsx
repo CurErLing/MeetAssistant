@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { User, Copy, Check, Users, LogOut, ArrowRight, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
+import { ConfirmModal } from '../../modals/ConfirmModal';
 
 interface ProfileViewProps {
   userId: string;
@@ -36,6 +37,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   
   // Team Mode State: 'select' (buttons) | 'join' (input)
   const [teamMode, setTeamMode] = useState<'select' | 'join'>('select');
+  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   
   // Name Editing State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -67,16 +70,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   };
 
   const handleCreateTeam = () => {
+    setShowCreateConfirm(true);
+  };
+
+  const executeCreateTeam = () => {
     const newTeamId = generateUUID();
-    if (confirm("系统将为您生成一个新的团队 ID 并自动切换。\n确认创建吗？")) {
-        onSwitchTeam(newTeamId);
-    }
+    onSwitchTeam(newTeamId);
+    setShowCreateConfirm(false);
   };
 
   const handleExitTeam = () => {
-    if (confirm("确定要退出当前团队吗？退出后将无法访问团队共享的数据。")) {
-        onSwitchTeam(''); // Clear team ID
-    }
+    setShowExitConfirm(true);
+  };
+
+  const executeExitTeam = () => {
+    onSwitchTeam(''); // Clear team ID
+    setShowExitConfirm(false);
   };
 
   const handleSaveName = () => {
@@ -90,6 +99,29 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 animate-fade-in bg-slate-50/50 h-full overflow-y-auto">
+      
+      <ConfirmModal 
+        isOpen={showCreateConfirm}
+        onClose={() => setShowCreateConfirm(false)}
+        onConfirm={executeCreateTeam}
+        title="创建新团队"
+        description="系统将为您生成一个新的团队 ID 并自动切换到该团队空间。您可以将此 ID 分享给同事以加入协作。"
+        warningText="提示：创建后您将进入一个全新的空白空间。"
+        confirmText="立即创建"
+        variant="primary"
+      />
+
+      <ConfirmModal 
+        isOpen={showExitConfirm}
+        onClose={() => setShowExitConfirm(false)}
+        onConfirm={executeExitTeam}
+        title="退出团队"
+        description="确定要退出当前团队吗？退出后您将回到个人空间，且无法访问团队共享的数据。"
+        warningText="注意：此操作不会删除团队数据，您可以通过 Team ID 重新加入。"
+        confirmText="确认退出"
+        variant="danger"
+      />
+
       <div className="w-full max-w-2xl bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         
         {/* Header / Banner */}
