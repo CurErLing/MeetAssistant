@@ -58,59 +58,6 @@ export const sliceAudio = async (file: File, start: number, end: number): Promis
 };
 
 /**
- * 删除选中区域 (删除中间，拼接首尾)
- */
-export const deleteAudioRange = async (file: File, start: number, end: number): Promise<File> => {
-  const audioCtx = getAudioContext();
-
-  try {
-    const arrayBuffer = await file.arrayBuffer();
-    const sourceBuffer = await audioCtx.decodeAudioData(arrayBuffer);
-
-    const sampleRate = sourceBuffer.sampleRate;
-    const startFrame = Math.max(0, Math.floor(start * sampleRate));
-    const endFrame = (end > 0 && end < sourceBuffer.duration) 
-      ? Math.floor(end * sampleRate) 
-      : sourceBuffer.length;
-
-    // 如果选区无效或覆盖全长，处理为特殊情况
-    if (startFrame >= endFrame) return file;
-    if (startFrame === 0 && endFrame === sourceBuffer.length) {
-       // 删除全部？返回空文件可能会导致问题，这里返回极短静音或报错，暂且返回原文件避免崩溃
-       throw new Error("Cannot delete entire file");
-    }
-
-    const removeCount = endFrame - startFrame;
-    const newLength = sourceBuffer.length - removeCount;
-
-    const destBuffer = audioCtx.createBuffer(
-      sourceBuffer.numberOfChannels,
-      newLength,
-      sampleRate
-    );
-
-    for (let i = 0; i < sourceBuffer.numberOfChannels; i++) {
-      const channelData = sourceBuffer.getChannelData(i);
-      const preSegment = channelData.subarray(0, startFrame);
-      const postSegment = channelData.subarray(endFrame);
-      
-      destBuffer.copyToChannel(preSegment, i, 0);
-      destBuffer.copyToChannel(postSegment, i, startFrame);
-    }
-
-    const wavBlob = bufferToWav(destBuffer);
-    const newName = file.name.replace(/\.[^/.]+$/, "") + "_cut.wav";
-    return new File([wavBlob], newName, { type: 'audio/wav' });
-
-  } catch (error) {
-    console.error("Audio deletion failed:", error);
-    return file;
-  } finally {
-    await audioCtx.close();
-  }
-};
-
-/**
  * 获取音频文件的时长 (秒)
  */
 export const getAudioDuration = (file: File): Promise<number> => {

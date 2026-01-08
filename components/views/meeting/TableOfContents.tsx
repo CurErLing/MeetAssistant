@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect } from 'react';
-import { AlignRight } from 'lucide-react';
 
 export interface TocItem {
   id: string;

@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, ChevronRight, LayoutTemplate, AudioLines, Tag, Database } from 'lucide-react';
+import { ChevronDown, ChevronRight, LayoutTemplate, AudioLines, Tag } from 'lucide-react';
 import { ViewState } from '../../types';
 import { SidebarNavItem } from './SidebarNavItem';
 

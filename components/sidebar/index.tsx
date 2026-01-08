@@ -1,8 +1,7 @@
 
 import React, { useState } from 'react';
 import { 
-  Mic, List as ListIcon, AudioLines, Tag, LayoutTemplate, 
-  Trash2, Folder as FolderIcon, Home, Menu, User
+  Mic, Trash2, Folder as FolderIcon, Home, Menu, User
 } from 'lucide-react';
 import { ViewState, Folder } from '../../types';
 import { SidebarNavItem } from './SidebarNavItem';

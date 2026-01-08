@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Copy, Check, Users, LogOut, ArrowRight, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
+import { User, Copy, Check, Users, LogOut, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { ConfirmModal } from '../../modals/ConfirmModal';
 

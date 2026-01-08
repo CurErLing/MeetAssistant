@@ -1,9 +1,8 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, Square, Pause, Play, Save, X, RotateCcw, StopCircle } from 'lucide-react';
+import { Mic, Pause, Save, RotateCcw, StopCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { BaseModal } from '../BaseModal';
-import { AudioEditor } from '../../audio-editor'; 
 import { formatTime } from '../../../utils/formatUtils';
 
 interface WebRecorderModalProps {
@@ -138,106 +137,80 @@ export const WebRecorderModal: React.FC<WebRecorderModalProps> = ({
     <BaseModal
       isOpen={true}
       onClose={onCancel}
-      maxWidth="max-w-lg"
-      title={
-        <>
-          <Mic size={20} className="text-red-500" />
-          <span>在线录音</span>
-        </>
-      }
+      maxWidth="max-w-md"
+      title="在线录音"
       footer={
         status === 'preview' ? (
-           <>
-             <Button variant="secondary" onClick={handleRetake} icon={<RotateCcw size={16}/>}>重录</Button>
-             <Button onClick={handleConfirm} icon={<Save size={16}/>} className="flex-1">保存录音</Button>
-           </>
+          <>
+            <Button variant="secondary" onClick={handleRetake} className="flex-1" icon={<RotateCcw size={16}/>}>重录</Button>
+            <Button onClick={handleConfirm} className="flex-1" icon={<Save size={16}/>}>保存</Button>
+          </>
         ) : (
-           <Button variant="secondary" className="w-full" onClick={onCancel}>取消</Button>
+          <Button variant="secondary" onClick={onCancel} className="w-full">取消</Button>
         )
       }
     >
-      <div className="flex flex-col items-center justify-center py-6 space-y-8">
-         
-         {/* Timer Display */}
-         <div className="text-center">
-            <div className={`text-5xl font-mono font-bold tracking-wider mb-2 ${status === 'recording' ? 'text-slate-900' : 'text-slate-400'}`}>
-               {formatTime(duration)}
-            </div>
-            <div className="flex items-center justify-center gap-2">
-               <div className={`w-2 h-2 rounded-full ${status === 'recording' ? 'bg-red-500 animate-pulse' : 'bg-slate-300'}`}></div>
-               <span className="text-xs font-bold uppercase tracking-widest text-slate-400">
-                 {status === 'idle' ? '准备就绪' : status === 'recording' ? '正在录音' : status === 'paused' ? '已暂停' : '录音预览'}
-               </span>
-            </div>
+      <div className="flex flex-col items-center justify-center py-8 space-y-6">
+         {/* Timer */}
+         <div className="text-4xl font-mono font-bold text-slate-900 tracking-wider">
+            {formatTime(duration)}
          </div>
 
-         {/* Visualizer / Preview */}
-         <div className="w-full h-32 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-center overflow-hidden relative">
-            {status === 'preview' && previewUrl ? (
-                <div className="w-full">
-                   <AudioEditor 
-                     url={previewUrl}
-                     duration={duration}
-                     compact={true}
-                     className="border-none shadow-none bg-transparent"
-                   />
-                </div>
-            ) : (
-                <div className="flex items-end justify-center gap-1 h-12">
-                   {/* Fake visualizer bars */}
-                   {[...Array(20)].map((_, i) => (
-                      <div 
-                        key={i} 
-                        className={`w-1.5 bg-blue-500 rounded-full transition-all duration-150 ${status === 'recording' ? 'animate-pulse' : 'h-1 opacity-20'}`}
-                        style={{ 
-                           height: status === 'recording' ? `${Math.random() * 100}%` : '4px',
-                           animationDelay: `${i * 0.05}s` 
-                        }}
-                      ></div>
-                   ))}
-                </div>
-            )}
-         </div>
+         {/* Visualizer / Status */}
+         {status === 'idle' && <p className="text-slate-400 text-sm">点击下方麦克风开始录音</p>}
+         {status === 'recording' && (
+            <div className="flex items-center gap-1 h-6">
+               <div className="w-1 h-3 bg-red-500 rounded-full animate-pulse"></div>
+               <div className="w-1 h-5 bg-red-500 rounded-full animate-pulse delay-75"></div>
+               <div className="w-1 h-4 bg-red-500 rounded-full animate-pulse delay-150"></div>
+               <div className="w-1 h-6 bg-red-500 rounded-full animate-pulse delay-100"></div>
+               <div className="w-1 h-3 bg-red-500 rounded-full animate-pulse"></div>
+            </div>
+         )}
+         {status === 'paused' && <p className="text-amber-500 font-bold text-sm">已暂停</p>}
 
          {/* Controls */}
-         <div className="flex items-center gap-6">
-            {status === 'idle' && (
-               <button 
-                 onClick={startRecording}
-                 className="w-20 h-20 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-xl shadow-red-200 transition-all hover:scale-105 active:scale-95"
-               >
-                  <Mic size={32} />
-               </button>
-            )}
-
-            {(status === 'recording' || status === 'paused') && (
-               <>
-                  {status === 'recording' ? (
-                     <button 
-                       onClick={pauseRecording}
-                       className="w-14 h-14 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-full flex items-center justify-center transition-all"
-                     >
-                        <Pause size={24} fill="currentColor" />
-                     </button>
-                  ) : (
-                     <button 
-                       onClick={resumeRecording}
-                       className="w-14 h-14 bg-red-100 text-red-500 hover:bg-red-200 rounded-full flex items-center justify-center transition-all"
-                     >
-                        <Mic size={24} />
-                     </button>
-                  )}
-
+         {status === 'preview' ? (
+            <div className="w-full bg-slate-50 p-4 rounded-xl border border-slate-200">
+               <audio src={previewUrl || ""} controls className="w-full h-8" />
+            </div>
+         ) : (
+            <div className="flex items-center gap-6">
+               {status === 'idle' ? (
                   <button 
-                    onClick={stopRecording}
-                    className="w-20 h-20 bg-slate-900 text-white hover:bg-slate-800 rounded-full flex items-center justify-center shadow-xl shadow-slate-200 transition-all hover:scale-105 active:scale-95"
+                    onClick={startRecording}
+                    className="w-16 h-16 bg-red-500 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-all"
                   >
-                     <StopCircle size={32} fill="currentColor" />
+                     <Mic size={32} />
                   </button>
-               </>
-            )}
-         </div>
+               ) : (
+                  <>
+                     {status === 'recording' ? (
+                        <button 
+                          onClick={pauseRecording}
+                          className="w-12 h-12 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center hover:bg-amber-200 transition-colors"
+                        >
+                           <Pause size={24} fill="currentColor" />
+                        </button>
+                     ) : (
+                        <button 
+                          onClick={resumeRecording}
+                          className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200 transition-colors"
+                        >
+                           <Mic size={24} />
+                        </button>
+                     )}
 
+                     <button 
+                       onClick={stopRecording}
+                       className="w-16 h-16 bg-slate-900 text-white rounded-full flex items-center justify-center shadow-lg hover:scale-105 transition-all"
+                     >
+                        <StopCircle size={32} fill="currentColor" />
+                     </button>
+                  </>
+               )}
+            </div>
+         )}
       </div>
     </BaseModal>
   );
