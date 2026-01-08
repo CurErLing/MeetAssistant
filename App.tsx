@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import { useAppStore } from './hooks/useAppStore';
 import { useHardwareSync } from './hooks/useHardwareSync';
 import { HomeView } from './components/views/home';
@@ -15,7 +15,7 @@ import { AuthView } from './components/views/auth/AuthView';
 import { GlobalModals } from './components/GlobalModals';
 import { MainLayout } from './components/layout/MainLayout';
 import { ToastProvider, useToast } from './components/common/Toast';
-import { ViewState } from './types';
+import { ViewState, MeetingFile } from './types';
 
 // Create an inner component to use the useToast hook
 const AppContent = () => {
@@ -100,6 +100,72 @@ const AppContent = () => {
     }
   };
 
+  // --- Search & Filter Logic ---
+  const filteredMeetings = useMemo(() => {
+    const query = store.searchQuery.trim().toLowerCase();
+    
+    // 1. First Pass: Create a shallow copy with match snippets if needed
+    const processedMeetings = store.meetings.map(m => {
+      // If no query, return original (no snippet)
+      if (!query) return { ...m, matchSnippet: undefined };
+
+      // Check Title
+      if (m.name.toLowerCase().includes(query)) {
+        return m; // Match in title, no snippet needed (or could add "Title Match")
+      }
+
+      // Check Transcript Content
+      if (m.transcript) {
+        for (const seg of m.transcript) {
+          const text = seg.text.toLowerCase();
+          const idx = text.indexOf(query);
+          if (idx !== -1) {
+            // Found a match, extract snippet
+            // Get ~15 chars before and ~30 chars after
+            const start = Math.max(0, idx - 15);
+            const end = Math.min(text.length, idx + query.length + 30);
+            let snippet = seg.text.substring(start, end);
+            
+            // Add ellipsis if truncated
+            if (start > 0) snippet = "..." + snippet;
+            if (end < text.length) snippet = snippet + "...";
+            
+            return { ...m, matchSnippet: snippet };
+          }
+        }
+      }
+
+      return m; // No match found in transcript
+    });
+
+    // 2. Second Pass: Filter based on Folder and Search Match
+    return processedMeetings.filter(m => {
+      // Folder Filter
+      const matchFolder = store.selectedFolderId ? m.folderId === store.selectedFolderId : true;
+      
+      // Search Filter
+      // We check if name matched OR if we generated a snippet (implying transcript matched)
+      // We also check speaker names as a bonus
+      const matchSearch = !query || 
+                          m.name.toLowerCase().includes(query) || 
+                          !!m.matchSnippet ||
+                          Object.values(m.speakers).some(s => s.name.toLowerCase().includes(query));
+
+      return matchFolder && matchSearch;
+    });
+  }, [store.meetings, store.searchQuery, store.selectedFolderId]);
+
+  const meetingsToShow = [...filteredMeetings].sort((a, b) => 
+    b.uploadDate.getTime() - a.uploadDate.getTime()
+  );
+
+  const currentFolderName = store.selectedFolderId 
+    ? store.folders.find(f => f.id === store.selectedFolderId)?.name 
+    : null;
+
+  const activeHomeTemplate = homeSelectedTemplateId ? store.templates.find(t => t.id === homeSelectedTemplateId) : null;
+  const TEMPLATE_CATEGORIES = ['通用', '会议', '演讲', '面试'];
+
   // --- Auth & Loading Guards ---
 
   if (store.isLoading) {
@@ -127,25 +193,6 @@ const AppContent = () => {
       />
     );
   }
-
-  const filteredMeetings = store.meetings.filter(m => {
-    const matchFolder = store.selectedFolderId ? m.folderId === store.selectedFolderId : true;
-    const matchSearch = store.searchQuery 
-      ? m.name.toLowerCase().includes(store.searchQuery.toLowerCase()) 
-      : true;
-    return matchFolder && matchSearch;
-  });
-    
-  const meetingsToShow = [...filteredMeetings].sort((a, b) => 
-    b.uploadDate.getTime() - a.uploadDate.getTime()
-  );
-
-  const currentFolderName = store.selectedFolderId 
-    ? store.folders.find(f => f.id === store.selectedFolderId)?.name 
-    : null;
-
-  const activeHomeTemplate = homeSelectedTemplateId ? store.templates.find(t => t.id === homeSelectedTemplateId) : null;
-  const TEMPLATE_CATEGORIES = ['通用', '会议', '演讲', '面试'];
 
   return (
     <>

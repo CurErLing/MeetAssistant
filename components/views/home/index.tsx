@@ -97,14 +97,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
       />
 
       {/* 2. Folders Section */}
-      <HomeFolderSection 
-        folders={folders}
-        onSelectFolder={onSelectFolder}
-        onRequestCreate={openCreateDialog}
-        onRequestRename={openRenameDialog}
-        onRequestDelete={openDeleteDialog}
-        onRequestShare={openShareDialog}
-      />
+      {!searchQuery && (
+        <HomeFolderSection 
+          folders={folders}
+          onSelectFolder={onSelectFolder}
+          onRequestCreate={openCreateDialog}
+          onRequestRename={openRenameDialog}
+          onRequestDelete={openDeleteDialog}
+          onRequestShare={openShareDialog}
+        />
+      )}
 
       {/* 3. Document List Section */}
       <HomeDocumentList 
@@ -117,6 +119,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         onToggleStar={onToggleStar}
         onDuplicate={onDuplicate}
         onRetry={onRetry}
+        searchQuery={searchQuery}
       />
     </div>
   );

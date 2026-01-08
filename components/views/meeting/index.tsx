@@ -62,6 +62,23 @@ export const MeetingDetailView = ({
     return meeting.speakers[editingSpeakerId]?.name || "";
   };
 
+  // --- Mobile Navigation Logic ---
+  const currentIndex = meetingList.findIndex(m => m.id === meeting.id);
+  const hasPrevious = currentIndex > 0;
+  const hasNext = currentIndex !== -1 && currentIndex < meetingList.length - 1;
+
+  const handlePrevious = () => {
+    if (hasPrevious && onSelectMeeting) {
+      onSelectMeeting(meetingList[currentIndex - 1].id);
+    }
+  };
+
+  const handleNext = () => {
+    if (hasNext && onSelectMeeting) {
+      onSelectMeeting(meetingList[currentIndex + 1].id);
+    }
+  };
+
   return (
     <div className="flex h-full animate-fade-in w-full overflow-hidden bg-white sm:rounded-2xl sm:shadow-sm sm:border sm:border-slate-200">
       
@@ -89,6 +106,11 @@ export const MeetingDetailView = ({
             setters.setReplacingAnalysisId(null);
           }}
           readOnly={isReadOnly}
+          // Navigation Props
+          onPrevious={handlePrevious}
+          onNext={handleNext}
+          hasPrevious={hasPrevious}
+          hasNext={hasNext}
         />
 
         {/* 标签页导航 (Tabs) */}

@@ -7,12 +7,14 @@ interface AnalysisContentProps {
   content: string;
   analysisId: string;
   header: React.ReactNode;
+  isStreaming?: boolean;
 }
 
 export const AnalysisContent: React.FC<AnalysisContentProps> = ({ 
   content, 
   analysisId,
-  header
+  header,
+  isStreaming = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [activeId, setActiveId] = useState<string>('');
@@ -122,7 +124,12 @@ export const AnalysisContent: React.FC<AnalysisContentProps> = ({
         <div className="max-w-5xl mx-auto pb-20 transition-all">
             {/* 注入头部组件，使其随内容滚动 */}
             {header}
-            <div className="markdown-body text-slate-700 leading-relaxed" dangerouslySetInnerHTML={{ __html: html }} />
+            <div className="markdown-body text-slate-700 leading-relaxed">
+               <div dangerouslySetInnerHTML={{ __html: html }} />
+               {isStreaming && (
+                 <span className="inline-block w-2 h-4 bg-blue-500 ml-1 animate-pulse align-middle"></span>
+               )}
+            </div>
         </div>
       </div>
     </div>

@@ -7,10 +7,21 @@ const getAudioContext = () => {
   return new AudioContextClass();
 };
 
+// 50MB limit for browser in-memory decoding to prevent OOM (Out Of Memory) crashes.
+// A 50MB MP3/M4A can decode to >500MB PCM data, risking browser stability on mobile.
+const MAX_SAFE_DECODE_SIZE = 50 * 1024 * 1024; 
+
 /**
  * 保留选中区域 (裁剪掉首尾)
  */
 export const sliceAudio = async (file: File, start: number, end: number): Promise<File> => {
+  // 1. Safety Check: If file is too large, skip physical slicing to avoid OOM.
+  // The app will fall back to "Virtual Trimming" (sending timestamps to AI prompt).
+  if (file.size > MAX_SAFE_DECODE_SIZE) {
+    console.warn(`[AudioUtils] File size (${(file.size / 1024 / 1024).toFixed(2)}MB) exceeds safe decoding limit. Skipping physical slice to prevent crash.`);
+    return file;
+  }
+
   const audioCtx = getAudioContext();
 
   try {
@@ -51,9 +62,13 @@ export const sliceAudio = async (file: File, start: number, end: number): Promis
 
   } catch (error) {
     console.error("Audio slicing failed:", error);
+    // Return original file on failure ensures the user flow continues
     return file;
   } finally {
-    await audioCtx.close();
+    // Explicitly close context to release hardware resources
+    if (audioCtx.state !== 'closed') {
+      await audioCtx.close();
+    }
   }
 };
 
@@ -62,6 +77,8 @@ export const sliceAudio = async (file: File, start: number, end: number): Promis
  */
 export const getAudioDuration = (file: File): Promise<number> => {
   return new Promise((resolve) => {
+    // Optimization: Use standard HTML5 Audio element for duration which streams metadata
+    // instead of decoding the whole file.
     const url = URL.createObjectURL(file);
     const audio = new Audio(url);
     

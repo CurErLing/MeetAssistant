@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Calendar, Clock, RotateCcw } from 'lucide-react';
+import { Calendar, Clock, RotateCcw, Search } from 'lucide-react';
 import { MeetingFile, Folder } from '../../../types';
 import { StatusBadge } from '../../common/StatusBadge';
 import { formatTime } from '../../../utils/formatUtils';
@@ -19,6 +19,7 @@ interface HomeDocumentListProps {
   onToggleStar: (id: string) => void;
   onDuplicate: (id: string) => void;
   onRetry: (id: string) => void;
+  searchQuery?: string; // Add Search Query Prop
 }
 
 export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
@@ -30,7 +31,8 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
   onRenameMeeting,
   onToggleStar,
   onDuplicate,
-  onRetry
+  onRetry,
+  searchQuery = ""
 }) => {
   const [activeTab, setActiveTab] = useState<'recent' | 'shared' | 'starred'>('recent');
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -44,24 +46,31 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
     retry: onRetry
   });
 
+  const isSearching = searchQuery.trim().length > 0;
   let displayList: MeetingFile[] = [];
 
-  if (activeTab === 'recent') {
-    displayList = [...meetings]
-        .sort((a, b) => {
-           const timeA = a.lastAccessedAt ? a.lastAccessedAt.getTime() : a.uploadDate.getTime();
-           const timeB = b.lastAccessedAt ? b.lastAccessedAt.getTime() : b.uploadDate.getTime();
-           return timeB - timeA;
-        })
-        .slice(0, 8);
-  } else if (activeTab === 'shared') {
-    displayList = [...meetings]
-        .filter(m => m.isReadOnly)
-        .sort((a, b) => b.uploadDate.getTime() - a.uploadDate.getTime());
-  } else if (activeTab === 'starred') {
-    displayList = [...meetings]
-        .filter(m => m.isStarred)
-        .sort((a, b) => b.uploadDate.getTime() - a.uploadDate.getTime());
+  if (isSearching) {
+    // Search mode: show all filtered meetings passed from parent
+    displayList = meetings;
+  } else {
+    // Tab mode: filter locally
+    if (activeTab === 'recent') {
+      displayList = [...meetings]
+          .sort((a, b) => {
+             const timeA = a.lastAccessedAt ? a.lastAccessedAt.getTime() : a.uploadDate.getTime();
+             const timeB = b.lastAccessedAt ? b.lastAccessedAt.getTime() : b.uploadDate.getTime();
+             return timeB - timeA;
+          })
+          .slice(0, 8);
+    } else if (activeTab === 'shared') {
+      displayList = [...meetings]
+          .filter(m => m.isReadOnly)
+          .sort((a, b) => b.uploadDate.getTime() - a.uploadDate.getTime());
+    } else if (activeTab === 'starred') {
+      displayList = [...meetings]
+          .filter(m => m.isStarred)
+          .sort((a, b) => b.uploadDate.getTime() - a.uploadDate.getTime());
+    }
   }
 
   const handleItemClick = (id: string, isProcessing: boolean) => {
@@ -73,33 +82,42 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
       <MeetingModals />
 
       <div className="flex items-center gap-8 mb-4 border-b border-slate-100 overflow-x-auto no-scrollbar">
-         <button 
-           onClick={() => setActiveTab('recent')}
-           className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'recent' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-         >
-           最近访问
-           {activeTab === 'recent' && (
-             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
-           )}
-         </button>
-         <button 
-           onClick={() => setActiveTab('shared')}
-           className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'shared' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-         >
-           与我共享
-           {activeTab === 'shared' && (
-             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
-           )}
-         </button>
-         <button 
-           onClick={() => setActiveTab('starred')}
-           className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'starred' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
-         >
-           收藏
-           {activeTab === 'starred' && (
-             <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
-           )}
-         </button>
+         {isSearching ? (
+            <div className="pb-3 text-sm sm:text-base font-bold text-slate-900 flex items-center gap-2">
+               <Search size={18} className="text-blue-600" />
+               搜索结果 ({displayList.length})
+            </div>
+         ) : (
+           <>
+             <button 
+               onClick={() => setActiveTab('recent')}
+               className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'recent' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               最近访问
+               {activeTab === 'recent' && (
+                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
+               )}
+             </button>
+             <button 
+               onClick={() => setActiveTab('shared')}
+               className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'shared' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               与我共享
+               {activeTab === 'shared' && (
+                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
+               )}
+             </button>
+             <button 
+               onClick={() => setActiveTab('starred')}
+               className={`pb-3 text-sm sm:text-base font-bold transition-all relative whitespace-nowrap ${activeTab === 'starred' ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+             >
+               收藏
+               {activeTab === 'starred' && (
+                 <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full"></div>
+               )}
+             </button>
+           </>
+         )}
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-visible">
@@ -119,6 +137,7 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
                const isProcessing = meeting.status === 'processing';
                const isError = meeting.status === 'error';
                const ownerName = getOwnerName(meeting);
+               const folder = folders.find(f => f.id === meeting.folderId);
                
                return (
                  <tr 
@@ -129,8 +148,9 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
                    <td className="px-6 py-4">
                       <MeetingMeta 
                         meeting={meeting} 
+                        folder={folder}
                         isProcessing={isProcessing} 
-                        showFormatInfo={false} // Home list is compact
+                        showFormatInfo={!isSearching} // In search mode, show matching snippet instead of folder info if available
                       />
                    </td>
                    <td className="px-6 py-4 hidden sm:table-cell">
@@ -179,9 +199,10 @@ export const HomeDocumentList: React.FC<HomeDocumentListProps> = ({
              }) : (
                <tr>
                  <td colSpan={6} className="px-6 py-12 text-center text-slate-400 text-sm">
-                   {activeTab === 'recent' && '暂无最近访问记录'}
-                   {activeTab === 'shared' && '暂无共享文档'}
-                   {activeTab === 'starred' && '暂无收藏文档'}
+                   {isSearching 
+                     ? '未找到匹配的会议记录' 
+                     : (activeTab === 'recent' ? '暂无最近访问记录' : (activeTab === 'shared' ? '暂无共享文档' : '暂无收藏文档'))
+                   }
                  </td>
                </tr>
              )}

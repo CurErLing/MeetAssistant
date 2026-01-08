@@ -99,6 +99,9 @@ export interface MeetingFile {
 
   // 是否收藏
   isStarred?: boolean;
+
+  // 搜索结果匹配片段 (临时字段，仅在搜索时存在)
+  matchSnippet?: string;
 }
 
 /**

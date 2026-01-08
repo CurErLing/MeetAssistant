@@ -96,17 +96,17 @@ export const transcribeAudio = async (file: File | null, options?: TranscribeOpt
  * 流程：
  * 1. 结合转写文本和用户选择的模板指令构建长文本 Prompt。
  * 2. 将发言人 ID 替换为真实姓名（如果有），提供上下文。
- * 3. 请求 Gemini 生成 Markdown 格式的分析报告。
+ * 3. 请求 Gemini 生成 Markdown 格式的分析报告 (支持流式输出)。
  */
 export const generateMeetingSummary = async (
   transcript: TranscriptSegment[], 
   speakers: Record<string, Speaker>,
-  template: Template | string 
+  template: Template | string,
+  onProgress?: (text: string) => void
 ): Promise<string> => {
   // 1. 检查 API Key
   const ai = getGeminiClient();
   if (!ai) {
-    // 对于分析功能，如果没有 Key，也应当提示而不是给假数据，保持一致性
     return "API Key 未配置，无法生成分析。";
   }
 
@@ -115,13 +115,24 @@ export const generateMeetingSummary = async (
     const instruction = getAnalysisInstruction(template);
     const prompt = buildAnalysisPrompt(transcript, speakers, instruction);
 
-    // 3. 调用 API
-    const response = await ai.models.generateContent({
+    // 3. 调用 API (Stream Mode)
+    const streamResult = await ai.models.generateContentStream({
       model: MODEL_ID,
       contents: prompt,
     });
 
-    return response.text || "生成总结失败。";
+    let fullText = "";
+    for await (const chunk of streamResult) {
+      const chunkText = chunk.text;
+      if (chunkText) {
+        fullText += chunkText;
+        if (onProgress) {
+          onProgress(fullText);
+        }
+      }
+    }
+
+    return fullText || "生成总结失败。";
   } catch (error) {
     console.error("Summary generation error:", error);
     return "生成总结时发生错误，请重试。错误信息：" + error;
