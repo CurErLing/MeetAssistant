@@ -141,8 +141,7 @@ export const supabaseService = {
         localStorage.setItem('jimu_app_team_id', newTeamId);
         return true;
     } else {
-        alert("无效的 Team ID 格式 (必须是 UUID)");
-        return false;
+        throw new Error("无效的 Team ID 格式 (必须是 UUID)");
     }
   },
 

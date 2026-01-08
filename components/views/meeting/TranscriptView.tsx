@@ -4,6 +4,7 @@ import { FileText } from 'lucide-react';
 import { TranscriptSegment, Speaker, SpeakerStatus } from '../../../types';
 import { TranscriptItem } from './TranscriptItem';
 import { TranscriptToolbar } from './transcript/TranscriptToolbar';
+import { useToast } from '../../common/Toast';
 
 export const TranscriptView = ({
   transcript,
@@ -28,6 +29,7 @@ export const TranscriptView = ({
 }) => {
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
   const [segmentTextInput, setSegmentTextInput] = useState("");
+  const { success } = useToast();
   
   // 使用 Ref 存储最新的输入值
   const textInputRef = useRef("");
@@ -82,8 +84,8 @@ export const TranscriptView = ({
 
   const handleCopy = useCallback((text: string) => {
     navigator.clipboard.writeText(text);
-    alert("已复制到剪贴板");
-  }, []);
+    success("已复制到剪贴板");
+  }, [success]);
 
   return (
     <div className="flex-1 flex flex-col h-full bg-white relative">

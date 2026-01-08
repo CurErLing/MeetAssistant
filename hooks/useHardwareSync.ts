@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { bluetoothService } from '../services/ble/BluetoothService';
 import { formatTime } from '../utils/formatUtils';
+import { useToast } from '../components/common/Toast';
 
 export interface HardwareFile {
   id: string;
@@ -21,6 +22,7 @@ export const useHardwareSync = (
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<'idle' | 'searching' | 'connected' | 'syncing' | 'disconnected'>('idle');
   const [deviceFiles, setDeviceFiles] = useState<HardwareFile[]>([]);
+  const { error, success, info } = useToast();
   
   // Initialize with capacity: null to ensure type consistency and reactivity
   const [deviceStatus, setDeviceStatus] = useState<{
@@ -36,15 +38,26 @@ export const useHardwareSync = (
     return bluetoothService.subscribeToState((state) => {
       setConnectionState(state);
       if (state === 'disconnected' && isModalOpen) {
-        alert("设备已断开连接");
+        error("设备已断开连接");
         setIsModalOpen(false);
       }
     });
-  }, [isModalOpen]);
+  }, [isModalOpen, error]);
 
   const openSyncModal = useCallback(async () => {
     setIsModalOpen(true);
-    await bluetoothService.connect();
+    try {
+        await bluetoothService.connect();
+    } catch (e: any) {
+        if (e && e.name === 'NotFoundError') {
+            // User cancelled, just close modal silently
+            setIsModalOpen(false);
+            return;
+        }
+        error("连接设备失败: " + (e.message || "未知错误"));
+        setIsModalOpen(false);
+        return;
+    }
     
     if (bluetoothService.isConnected) {
         bluetoothService.setStatusCallback((status) => {
@@ -71,7 +84,7 @@ export const useHardwareSync = (
             setDeviceFiles(mappedFiles.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
         });
     }
-  }, []);
+  }, [error]);
 
   const closeSyncModal = useCallback(() => {
     bluetoothService.disconnect();
@@ -100,14 +113,13 @@ export const useHardwareSync = (
                 fileData.rawSize,
                 (pct) => setTransferProgress(pct),
                 (file) => {
-                  debugger
                     onCreateMeeting(file, { isBatch });
                     resolve();
                 },
-                (error) => {
-                    // Alert user but reject promise to handle flow in loop
-                    alert(`同步文件 ${fileData.name} 失败: ${error}`);
-                    resolve(); // Resolve to continue to next file instead of crashing whole loop
+                (errStr) => {
+                    // Log error but continue flow
+                    error(`同步文件 ${fileData.name} 失败: ${errStr}`);
+                    resolve(); 
                 }
             );
         });
@@ -120,8 +132,9 @@ export const useHardwareSync = (
     setTimeout(() => {
       onSyncComplete();
       closeSyncModal();
+      success(`成功同步 ${filesToSync.length} 个文件`);
     }, 500);
-  }, [deviceFiles, onCreateMeeting, onSyncComplete, closeSyncModal]);
+  }, [deviceFiles, onCreateMeeting, onSyncComplete, closeSyncModal, error, success]);
 
   return {
     isModalOpen,

@@ -14,10 +14,13 @@ import { ProfileView } from './components/views/profile/ProfileView';
 import { AuthView } from './components/views/auth/AuthView';
 import { GlobalModals } from './components/GlobalModals';
 import { MainLayout } from './components/layout/MainLayout';
+import { ToastProvider, useToast } from './components/common/Toast';
 import { ViewState } from './types';
 
-const App = () => {
+// Create an inner component to use the useToast hook
+const AppContent = () => {
   const store = useAppStore();
+  const toast = useToast();
   
   // Navigation State
   const [navSource, setNavSource] = useState<'home' | 'sidebar'>('sidebar');
@@ -26,7 +29,7 @@ const App = () => {
   // Local UI State
   const [isWebRecorderOpen, setIsWebRecorderOpen] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
-  const [pendingFileSource, setPendingFileSource] = useState<'upload' | 'hardware'>('upload'); // New state to track source
+  const [pendingFileSource, setPendingFileSource] = useState<'upload' | 'hardware'>('upload'); 
   const [targetTemplateId, setTargetTemplateId] = useState<string | null>(null);
   const [homeSelectedTemplateId, setHomeSelectedTemplateId] = useState<string | null>(null);
   
@@ -77,14 +80,15 @@ const App = () => {
       setPendingFile(null);
       // Do not reset folder selection, keep user in current folder if set
       store.setView('list'); 
+      toast.success('文件已导入并开始处理');
     } 
   };
 
   const handleSaveRecording = (file: File) => {
     store.createMeeting(file, 0, 0, 'recording');
     setIsWebRecorderOpen(false);
-    // Do not reset folder selection
     store.setView('list');
+    toast.success('录音已保存并开始处理');
   };
 
   const handleShareFolder = (folderId: string) => {
@@ -92,7 +96,7 @@ const App = () => {
     if (folder) {
         const shareLink = `https://jimumeeting.ai/share/folder/${folderId}`;
         navigator.clipboard.writeText(shareLink);
-        alert(`“${folder.name}”的分享链接已生成并复制到剪贴板！\n链接: ${shareLink}`);
+        toast.success(`分享链接已复制: ${folder.name}`);
     }
   };
 
@@ -106,12 +110,10 @@ const App = () => {
     );
   }
 
-  // Not logged in
   if (!store.userId) {
     return <AuthView onLogin={store.login} />;
   }
 
-  // External Share View (public access, usually wouldn't need login, but in this logic we assume app access requires login first unless the route was handled outside App.tsx)
   if (store.view === 'external-share' && store.activeMeeting) {
     return (
       <ExternalShareView 
@@ -126,7 +128,6 @@ const App = () => {
     );
   }
 
-  // Filter Logic: Folder + Search
   const filteredMeetings = store.meetings.filter(m => {
     const matchFolder = store.selectedFolderId ? m.folderId === store.selectedFolderId : true;
     const matchSearch = store.searchQuery 
@@ -170,10 +171,14 @@ const App = () => {
         
         activeHomeTemplate={store.view === 'home' ? activeHomeTemplate : null}
         templateCategories={TEMPLATE_CATEGORIES}
-        onSaveTemplate={store.updateTemplate}
+        onSaveTemplate={(id, updates) => {
+           store.updateTemplate(id, updates);
+           toast.success("模板已更新");
+        }}
         onDeleteTemplate={(id) => {
            store.deleteTemplate(id);
            setHomeSelectedTemplateId(null);
+           toast.success("模板已删除");
         }}
         onCloseTemplateModal={() => setHomeSelectedTemplateId(null)}
       />
@@ -189,14 +194,23 @@ const App = () => {
         meetingsCount={store.meetings.length}
         deletedCount={store.deletedMeetings.length}
         folders={store.folders}
-        onAddFolder={store.addFolder}
+        onAddFolder={(name) => {
+           store.addFolder(name);
+           toast.success(`文件夹 "${name}" 已创建`);
+        }}
         selectedFolderId={store.selectedFolderId}
         onSelectFolder={(id) => {
           store.setSelectedFolderId(id);
           setNavSource('sidebar');
         }}
-        onRenameFolder={store.updateFolder}
-        onDeleteFolder={store.deleteFolder}
+        onRenameFolder={(id, name) => {
+           store.updateFolder(id, name);
+           toast.success("文件夹重命名成功");
+        }}
+        onDeleteFolder={(id) => {
+           store.deleteFolder(id);
+           toast.success("文件夹已删除");
+        }}
         onShareFolder={handleShareFolder}
         teamId={store.teamId}
         onSwitchTeam={store.joinTeam}
@@ -209,7 +223,7 @@ const App = () => {
           {store.view === 'home' && (
             <HomeView 
               userName={store.userName}
-              meetings={meetingsToShow} // Uses filtered list if search is active
+              meetings={meetingsToShow} 
               folders={store.folders}
               templates={store.templates} 
               onSelectMeeting={(id) => {
@@ -235,15 +249,36 @@ const App = () => {
               onTriggerHardwareSync={openSyncModal}
               onStartRecording={() => setIsWebRecorderOpen(true)}
               isHardwareSyncing={hardwareConnectionState === 'syncing'}
-              onAddFolder={store.addFolder}
-              onRenameFolder={store.updateFolder}
-              onDeleteFolder={store.deleteFolder}
+              onAddFolder={(name) => {
+                 store.addFolder(name);
+                 toast.success(`文件夹 "${name}" 已创建`);
+              }}
+              onRenameFolder={(id, name) => {
+                 store.updateFolder(id, name);
+                 toast.success("文件夹重命名成功");
+              }}
+              onDeleteFolder={(id) => {
+                 store.deleteFolder(id);
+                 toast.success("文件夹已删除");
+              }}
               onShareFolder={handleShareFolder}
-              onDeleteMeeting={store.deleteMeeting}
-              onMoveMeeting={store.moveMeetingToFolder}
-              onRenameMeeting={(id, name) => store.updateMeeting(id, { name })}
+              onDeleteMeeting={(id) => {
+                 store.deleteMeeting(id);
+                 toast.success("已移至回收站");
+              }}
+              onMoveMeeting={(id, fid) => {
+                 store.moveMeetingToFolder(id, fid);
+                 toast.success("移动成功");
+              }}
+              onRenameMeeting={(id, name) => {
+                 store.updateMeeting(id, { name });
+                 toast.success("重命名成功");
+              }}
               onToggleStar={store.toggleStarMeeting}
-              onDuplicate={store.duplicateMeeting}
+              onDuplicate={(id) => {
+                 store.duplicateMeeting(id);
+                 toast.success("副本创建成功");
+              }}
               onRetry={store.retryProcessMeeting}
               searchQuery={store.searchQuery}
               onSearchChange={store.setSearchQuery}
@@ -263,9 +298,18 @@ const App = () => {
                 setReturnView('list');
                 store.accessMeeting(id);
               }}
-              onDeleteMeeting={store.deleteMeeting}
-              onMoveMeeting={store.moveMeetingToFolder}
-              onRenameMeeting={(id, name) => store.updateMeeting(id, { name })}
+              onDeleteMeeting={(id) => {
+                 store.deleteMeeting(id);
+                 toast.success("已移至回收站");
+              }}
+              onMoveMeeting={(id, fid) => {
+                 store.moveMeetingToFolder(id, fid);
+                 toast.success("移动成功");
+              }}
+              onRenameMeeting={(id, name) => {
+                 store.updateMeeting(id, { name });
+                 toast.success("重命名成功");
+              }}
               onClearFolder={() => store.setSelectedFolderId(null)}
               onBack={() => {
                   store.setSelectedFolderId(null);
@@ -273,11 +317,20 @@ const App = () => {
               }}
               showBackButton={navSource === 'home'}
               selectedFolderId={store.selectedFolderId}
-              onRenameFolder={store.updateFolder}
-              onDeleteFolder={store.deleteFolder}
+              onRenameFolder={(id, name) => {
+                 store.updateFolder(id, name);
+                 toast.success("文件夹重命名成功");
+              }}
+              onDeleteFolder={(id) => {
+                 store.deleteFolder(id);
+                 toast.success("文件夹已删除");
+              }}
               onShareFolder={handleShareFolder}
               onToggleStar={store.toggleStarMeeting}
-              onDuplicate={store.duplicateMeeting}
+              onDuplicate={(id) => {
+                 store.duplicateMeeting(id);
+                 toast.success("副本创建成功");
+              }}
               onRetry={store.retryProcessMeeting}
               searchQuery={store.searchQuery}
               onSearchChange={store.setSearchQuery}
@@ -293,7 +346,10 @@ const App = () => {
               voiceprints={store.voiceprints}
               onUpdate={(updates) => store.updateMeeting(store.activeMeeting!.id, updates)} 
               onBack={() => store.setView(returnView)} 
-              onRegisterVoiceprint={store.addVoiceprint} 
+              onRegisterVoiceprint={(name) => {
+                 store.addVoiceprint(name);
+                 toast.success(`声纹 "${name}" 注册成功`);
+              }} 
               onPreviewShare={(config) => {
                 store.setShareConfig(config);
                 store.setView('external-share');
@@ -304,18 +360,36 @@ const App = () => {
           {store.view === 'voiceprints' && (
             <VoiceprintManagerView 
               voiceprints={store.voiceprints} 
-              onAdd={store.addVoiceprint} 
-              onUpdate={store.updateVoiceprint} 
-              onDelete={store.deleteVoiceprint} 
+              onAdd={(name, file) => {
+                 store.addVoiceprint(name, file);
+                 toast.success(`声纹 "${name}" 添加成功`);
+              }} 
+              onUpdate={(id, name, file) => {
+                 store.updateVoiceprint(id, name, file);
+                 toast.success("声纹信息更新成功");
+              }} 
+              onDelete={(id) => {
+                 store.deleteVoiceprint(id);
+                 toast.success("声纹已删除");
+              }} 
             />
           )}
 
           {store.view === 'hotwords' && (
             <HotwordManagerView 
               hotwords={store.hotwords} 
-              onAdd={store.addHotword} 
-              onUpdate={store.updateHotword} 
-              onDelete={store.deleteHotword} 
+              onAdd={(w, c) => {
+                 store.addHotword(w, c);
+                 toast.success(`热词 "${w}" 添加成功`);
+              }} 
+              onUpdate={(id, w, c) => {
+                 store.updateHotword(id, w, c);
+                 toast.success("热词更新成功");
+              }} 
+              onDelete={(id) => {
+                 store.deleteHotword(id);
+                 toast.success("热词已删除");
+              }} 
             />
           )}
 
@@ -323,9 +397,18 @@ const App = () => {
             <TemplateManagerView 
               templates={store.templates} 
               toggleStarTemplate={store.toggleStarTemplate} 
-              onAdd={store.addTemplate} 
-              onUpdate={store.updateTemplate} 
-              onDelete={store.deleteTemplate} 
+              onAdd={(t) => {
+                 store.addTemplate(t);
+                 toast.success(`模版 "${t.name}" 已添加`);
+              }} 
+              onUpdate={(id, u) => {
+                 store.updateTemplate(id, u);
+                 toast.success("模版更新成功");
+              }} 
+              onDelete={(id) => {
+                 store.deleteTemplate(id);
+                 toast.success("模版已删除");
+              }} 
               initialSelectedId={targetTemplateId}
             />
           )}
@@ -333,9 +416,18 @@ const App = () => {
           {store.view === 'recycle-bin' && (
             <RecycleBinView 
               deletedMeetings={store.deletedMeetings} 
-              onRestore={store.restoreMeeting} 
-              onPermanentDelete={store.permanentDeleteMeeting}
-              onEmptyRecycleBin={store.emptyRecycleBin}
+              onRestore={(id) => {
+                 store.restoreMeeting(id);
+                 toast.success("会议已还原");
+              }} 
+              onPermanentDelete={(id) => {
+                 store.permanentDeleteMeeting(id);
+                 toast.success("已彻底删除");
+              }}
+              onEmptyRecycleBin={() => {
+                 store.emptyRecycleBin();
+                 toast.success("回收站已清空");
+              }}
             />
           )}
 
@@ -345,12 +437,23 @@ const App = () => {
               userName={store.userName}
               teamId={store.teamId}
               onSwitchTeam={store.joinTeam}
-              onUpdateName={store.updateUserName}
+              onUpdateName={(name) => {
+                 store.updateUserName(name);
+                 toast.success("昵称修改成功");
+              }}
               onLogout={store.logout}
             />
           )}
       </MainLayout>
     </>
+  );
+};
+
+const App = () => {
+  return (
+    <ToastProvider>
+      <AppContent />
+    </ToastProvider>
   );
 };
 

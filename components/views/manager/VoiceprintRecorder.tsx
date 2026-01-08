@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Mic, Mic2, RefreshCw, Check, Upload, FileAudio, X } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { BaseModal } from '../../modals/BaseModal';
+import { useToast } from '../../common/Toast';
 
 export const VoiceprintRecorder = ({
   initialName = "",
@@ -19,6 +20,7 @@ export const VoiceprintRecorder = ({
   const [progress, setProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const { error } = useToast();
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -72,7 +74,7 @@ export const VoiceprintRecorder = ({
 
         } catch (err) {
             console.error("Mic error", err);
-            alert("无法访问麦克风");
+            error("无法访问麦克风");
         }
     } else {
         // Upload Mode

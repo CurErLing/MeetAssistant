@@ -8,6 +8,7 @@ import { DetailTabs } from './DetailTabs';
 import { MeetingContent } from './MeetingContent';
 import { MeetingModals } from './MeetingModals';
 import { useMeetingDetailLogic } from '../../../hooks/useMeetingDetailLogic';
+import { useToast } from '../../common/Toast';
 
 /**
  * 会议详情页主组件
@@ -34,6 +35,7 @@ export const MeetingDetailView = ({
   onRegisterVoiceprint: (name: string) => void, 
   onPreviewShare: (config: ShareConfig) => void
 }) => {
+  const { info } = useToast();
   
   // 使用自定义 Hook 提取业务逻辑，保持视图层整洁
   const { state, setters, actions } = useMeetingDetailLogic({
@@ -80,7 +82,7 @@ export const MeetingDetailView = ({
           onBack={onBack}
           onUpdateTitle={actions.updateMeetingTitle}
           onShare={() => setters.setIsShareModalOpen(true)}
-          onExport={() => alert("导出功能开发中...")}
+          onExport={() => info("导出功能开发中...")}
           isSelectingTemplate={isSelectingTemplate}
           onCancelSelectTemplate={() => {
             setters.setIsSelectingTemplate(false);

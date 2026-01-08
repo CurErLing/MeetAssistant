@@ -5,6 +5,7 @@ import { MeetingFile, Folder } from '../types';
 import { ConfirmModal } from '../components/modals/ConfirmModal';
 import { InputModal } from '../components/modals/InputModal';
 import { MoveToFolderModal } from '../components/modals/meeting/MoveToFolderModal';
+import { useToast } from '../components/common/Toast';
 
 interface MeetingActions {
   deleteMeeting: (id: string) => void;
@@ -22,11 +23,12 @@ export const useMeetingModals = (
   const [meetingToDelete, setMeetingToDelete] = useState<string | null>(null);
   const [meetingToMove, setMeetingToMove] = useState<MeetingFile | null>(null);
   const [meetingToRename, setMeetingToRename] = useState<MeetingFile | null>(null);
+  const { warning } = useToast();
 
   const handleMeetingAction = (meeting: MeetingFile, action: 'rename' | 'move' | 'delete' | 'toggleStar' | 'duplicate' | 'retry') => {
     // 只读文件检查 (除了 toggleStar, duplicate)
     if ((action === 'rename' || action === 'delete' || action === 'move' || action === 'retry') && meeting.isReadOnly) {
-      alert("只读文件无法执行此操作");
+      warning("只读文件无法执行此操作");
       return;
     }
 

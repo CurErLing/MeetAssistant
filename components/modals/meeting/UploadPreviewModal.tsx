@@ -6,6 +6,7 @@ import { sliceAudio } from '../../../services/audioUtils';
 import { useAudioPlayer } from '../../audio-editor/useAudioPlayer';
 import { WaveformEditor } from '../../audio-editor/WaveformEditor';
 import { formatTime } from '../../../utils/formatUtils';
+import { useToast } from '../../common/Toast';
 
 export const UploadPreviewModal = ({
   file,
@@ -19,6 +20,7 @@ export const UploadPreviewModal = ({
   const [currentFile, setCurrentFile] = useState<File>(file);
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [duration, setDuration] = useState(0);
+  const { error, success } = useToast();
   
   // Trimming State
   const [trimStart, setTrimStart] = useState(0);
@@ -68,9 +70,10 @@ export const UploadPreviewModal = ({
       // Reset trimmer will happen automatically when duration updates
       setTrimStart(0);
       setTrimEnd(0); 
+      success("裁剪成功");
     } catch (e) {
       console.error("Processing failed", e);
-      alert("裁剪失败，请重试");
+      error("裁剪失败，请重试");
     } finally {
       setIsProcessing(false);
     }

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, Copy, Check, Users, LogOut, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { ConfirmModal } from '../../modals/ConfirmModal';
+import { useToast } from '../../common/Toast';
 
 interface ProfileViewProps {
   userId: string;
@@ -34,6 +35,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 }) => {
   const [inputTeamId, setInputTeamId] = useState('');
   const [isCopied, setIsCopied] = useState(false);
+  const { error, success } = useToast();
   
   // Team Mode State: 'select' (buttons) | 'join' (input)
   const [teamMode, setTeamMode] = useState<'select' | 'join'>('select');
@@ -52,6 +54,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const handleCopyId = () => {
     navigator.clipboard.writeText(userId);
     setIsCopied(true);
+    success("ID 已复制");
     setTimeout(() => setIsCopied(false), 2000);
   };
 
@@ -60,12 +63,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       // Basic UUID format check
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (!uuidRegex.test(inputTeamId.trim())) {
-          alert("无效的 Team ID 格式。请输入有效的 UUID。");
+          error("无效的 Team ID 格式。请输入有效的 UUID。");
           return;
       }
       onSwitchTeam(inputTeamId.trim());
       setTeamMode('select');
       setInputTeamId('');
+      success("已加入团队");
     }
   };
 
@@ -77,6 +81,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     const newTeamId = generateUUID();
     onSwitchTeam(newTeamId);
     setShowCreateConfirm(false);
+    success("新团队创建成功");
   };
 
   const handleExitTeam = () => {
@@ -86,6 +91,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   const executeExitTeam = () => {
     onSwitchTeam(''); // Clear team ID
     setShowExitConfirm(false);
+    success("已退出团队");
   };
 
   const handleSaveName = () => {

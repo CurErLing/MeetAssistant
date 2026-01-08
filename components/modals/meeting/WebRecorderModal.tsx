@@ -4,6 +4,7 @@ import { Mic, Pause, Save, RotateCcw, StopCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { BaseModal } from '../BaseModal';
 import { formatTime } from '../../../utils/formatUtils';
+import { useToast } from '../../common/Toast';
 
 interface WebRecorderModalProps {
   onConfirm: (file: File) => void;
@@ -18,6 +19,7 @@ export const WebRecorderModal: React.FC<WebRecorderModalProps> = ({
   const [duration, setDuration] = useState(0);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const { error } = useToast();
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -48,7 +50,7 @@ export const WebRecorderModal: React.FC<WebRecorderModalProps> = ({
         mediaRecorderRef.current = recorder;
       } catch (err) {
         console.error("Failed to access microphone", err);
-        alert("无法访问麦克风，请检查权限设置。");
+        error("无法访问麦克风，请检查权限设置。");
         onCancel();
       }
     };
