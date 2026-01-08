@@ -205,6 +205,20 @@ export const useAppStore = () => {
     }
   };
 
+  const emptyRecycleBin = async () => {
+    const toDelete = [...deletedMeetings];
+    setDeletedMeetings([]); // 乐观更新：立即清空 UI
+
+    // 批量执行删除操作
+    for (const meeting of toDelete) {
+      if (!meeting.id.startsWith('mock_')) {
+        // 不等待单个结果，避免阻塞
+        supabaseService.deleteMeetingPermanent(meeting.id, meeting.format)
+          .catch(err => console.error(`Failed to delete meeting ${meeting.id}`, err));
+      }
+    }
+  };
+
   const generateSpeakersFromTranscript = (transcript: TranscriptSegment[]) => {
     const uniqueIds = Array.from(new Set(transcript.map(s => s.speakerId)));
     const newSpeakers: Record<string, Speaker> = {};
@@ -445,6 +459,7 @@ export const useAppStore = () => {
     deleteMeeting,
     restoreMeeting,
     permanentDeleteMeeting,
+    emptyRecycleBin, // Export new function
     moveMeetingToFolder,
     toggleStarMeeting,
     duplicateMeeting,

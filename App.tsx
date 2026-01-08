@@ -309,6 +309,7 @@ const App = () => {
               deletedMeetings={store.deletedMeetings} 
               onRestore={store.restoreMeeting} 
               onPermanentDelete={store.permanentDeleteMeeting}
+              onEmptyRecycleBin={store.emptyRecycleBin}
             />
           )}
       </MainLayout>

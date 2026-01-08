@@ -5,17 +5,21 @@ import { MeetingFile } from '../../../types';
 import { ConfirmModal } from '../../modals/ConfirmModal';
 import { RecycleBinTable } from './RecycleBinTable';
 import { EmptyState } from '../../EmptyState';
+import { Button } from '../../common/Button';
 
 export const RecycleBinView = ({ 
   deletedMeetings, 
   onRestore, 
-  onPermanentDelete
+  onPermanentDelete,
+  onEmptyRecycleBin
 }: { 
   deletedMeetings: MeetingFile[], 
   onRestore: (id: string) => void,
-  onPermanentDelete: (id: string) => void
+  onPermanentDelete: (id: string) => void,
+  onEmptyRecycleBin: () => void
 }) => {
   const [meetingToDeleteId, setMeetingToDeleteId] = useState<string | null>(null);
+  const [showEmptyConfirm, setShowEmptyConfirm] = useState(false);
   
   const calculateDaysLeft = (deletedAt?: Date) => {
     if (!deletedAt) return 7;
@@ -32,9 +36,15 @@ export const RecycleBinView = ({
     }
   };
 
+  const handleConfirmEmpty = () => {
+    onEmptyRecycleBin();
+    setShowEmptyConfirm(false);
+  };
+
   return (
     <div className="space-y-6 animate-fade-in h-full flex flex-col pb-10">
       
+      {/* 单个删除确认 */}
       <ConfirmModal 
         isOpen={!!meetingToDeleteId}
         onClose={() => setMeetingToDeleteId(null)}
@@ -46,15 +56,40 @@ export const RecycleBinView = ({
         variant="danger"
       />
 
+      {/* 清空回收站确认 */}
+      <ConfirmModal 
+        isOpen={showEmptyConfirm}
+        onClose={() => setShowEmptyConfirm(false)}
+        onConfirm={handleConfirmEmpty}
+        title="清空回收站"
+        description={`您确定要永久删除回收站中的所有 (${deletedMeetings.length}) 个项目吗？`}
+        warningText="警告：清空后所有文件将无法恢复。"
+        confirmText="确认清空"
+        variant="danger"
+      />
+
       {/* Header Section */}
-      <div className="flex items-end justify-between">
+      <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-slate-900 tracking-tight">回收站</h2>
-          <p className="text-slate-500 mt-1 text-sm">管理已删除的会议记录。</p>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mt-1">
+             <p className="text-slate-500 text-sm">管理已删除的会议记录。</p>
+             <div className="inline-flex items-center gap-1.5 text-xs text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 w-fit">
+                <AlertTriangle size={12} />
+                <span>项目将在删除 7 天后被永久清除</span>
+             </div>
+          </div>
         </div>
-        <div className="hidden sm:flex items-center gap-2 text-xs text-amber-600 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-100">
-           <AlertTriangle size={14} />
-           <span>项目将在删除 7 天后被永久清除</span>
+        <div>
+           <Button 
+             variant="danger" 
+             icon={<Trash2 size={16} />} 
+             onClick={() => setShowEmptyConfirm(true)}
+             disabled={deletedMeetings.length === 0}
+             className="shadow-sm"
+           >
+             清空回收站
+           </Button>
         </div>
       </div>
 

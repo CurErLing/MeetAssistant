@@ -27,6 +27,11 @@ export const HardwareSyncModal: React.FC<HardwareSyncModalProps> = ({
   onClose
 }) => {
   const selectedCount = files.filter(f => f.selected).length;
+  
+  // Progress Circle Config
+  const radius = 56;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (transferProgress / 100) * circumference;
 
   return (
     <BaseModal
@@ -74,21 +79,21 @@ export const HardwareSyncModal: React.FC<HardwareSyncModalProps> = ({
         {connectionState === 'syncing' && (
            <div className="flex-1 flex flex-col items-center justify-center space-y-8 py-10 animate-fade-in">
               <div className="relative w-32 h-32 flex items-center justify-center">
-                 <svg className="w-full h-full transform -rotate-90">
-                    <circle cx="64" cy="64" r="56" stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
+                 <svg className="w-full h-full transform -rotate-90" viewBox="0 0 128 128">
+                    <circle cx="64" cy="64" r={radius} stroke="#f1f5f9" strokeWidth="8" fill="transparent" />
                     <circle 
-                      cx="64" cy="64" r="56" 
+                      cx="64" cy="64" r={radius} 
                       stroke="#3b82f6" 
                       strokeWidth="8" 
                       fill="transparent" 
-                      strokeDasharray="351.8" 
-                      strokeDashoffset={351.8 - (351.8 * transferProgress) / 100} 
+                      strokeDasharray={circumference} 
+                      strokeDashoffset={strokeDashoffset} 
                       strokeLinecap="round"
                       className="transition-all duration-300 ease-linear" 
                     />
                  </svg>
                  <div className="absolute flex flex-col items-center">
-                    <span className="font-bold text-2xl text-blue-600">{transferProgress}%</span>
+                    <span className="font-bold text-2xl text-blue-600">{Math.round(transferProgress)}%</span>
                  </div>
               </div>
               <div className="text-center">
