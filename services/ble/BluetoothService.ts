@@ -591,6 +591,7 @@ class BluetoothService {
   }
 
   private async finishDownload() {
+    debugger
     if (this.downloadWatchdog) clearTimeout(this.downloadWatchdog);
     
     if (this.currentDownloadFile && this.onFileDownloadComplete) {
@@ -627,22 +628,11 @@ class BluetoothService {
          file = new File([blob], fileName, { type: mimeType });
       } else if (mimeType === 'audio/ogg' || mimeType === 'audio/webm' || fileName.endsWith('.opus') || fileName.endsWith('.webm')) {
          console.log(`Converting Opus/WebM chunks (${this.currentDownloadFile.data.length}) to WAV...`);
-         
-         // Try to convert, pass the expected mimeType to help the converter
-         // If it's technically opus but in a webm container, the mimeType should ideally be audio/webm
-         const sourceMime = mimeType === 'audio/mpeg' ? 'audio/webm' : mimeType; 
-         
-         const convertedFile = await convertToWav(this.currentDownloadFile.data, sourceMime);
-         
-         // Check if conversion succeeded (it returns audio/wav on success)
-         if (convertedFile.type === 'audio/wav') {
-             const newName = fileName.replace(/\.[^/.]+$/, "") + ".wav";
-             file = new File([convertedFile], newName, { type: 'audio/wav' });
-         } else {
-             // Fallback: Use the original file data/type to avoid "no supported sources" error
-             // Do NOT rename to .wav if it's still webm/ogg
-             file = new File([convertedFile], fileName, { type: convertedFile.type });
-         }
+         // 传递原始 chunks 数组
+         file = await convertToWav(this.currentDownloadFile.data);
+         // 保持原始文件名，但后缀改为 .wav
+         const newName = fileName.replace(/\.[^/.]+$/, "") + ".wav";
+         file = new File([file], newName, { type: 'audio/wav' });
       } else {
          const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
          const combinedData = new Uint8Array(totalSize);

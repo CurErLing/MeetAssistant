@@ -243,6 +243,8 @@ export const SpeakerListModal = ({
   onEditSpeaker: (id: string) => void,
   onClose: () => void
 }) => {
+  const speakerList = Object.values(speakers);
+
   return (
     <BaseModal
       isOpen={true}
@@ -253,33 +255,42 @@ export const SpeakerListModal = ({
         <Button onClick={onClose} variant="secondary" className="w-full">关闭</Button>
       }
     >
-      <div className="max-h-96 overflow-y-auto p-1">
-        {Object.values(speakers).map(speaker => (
-          <div key={speaker.id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors group">
-            <div className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${speaker.color}`}>
-                {speaker.name.charAt(0)}
-              </div>
-              <div>
-                <div className="font-bold text-slate-900">{speaker.name}</div>
-                <div className="text-xs text-slate-400 flex items-center gap-1.5">
-                  {speaker.id}
-                  {speaker.status === SpeakerStatus.REGISTERED && (
-                    <span className="flex items-center gap-0.5 px-1 rounded bg-indigo-50 text-indigo-600 text-[8px] font-bold uppercase">
-                      <Fingerprint size={8} /> 已关联声纹
-                    </span>
-                  )}
+      <div className="max-h-96 overflow-y-auto p-1 min-h-[100px]">
+        {speakerList.length === 0 ? (
+           <div className="flex flex-col items-center justify-center py-8 text-slate-400">
+              <Users size={32} className="mb-2 opacity-50" />
+              <p className="text-sm">暂无发言人信息</p>
+              <p className="text-xs mt-1 text-slate-300">转写完成后将自动识别</p>
+           </div>
+        ) : (
+           speakerList.map(speaker => (
+            <div key={speaker.id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors group">
+              <div className="flex items-center gap-4">
+                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold border ${speaker.color}`}>
+                  {speaker.name.charAt(0)}
+                </div>
+                <div>
+                  <div className="font-bold text-slate-900">{speaker.name}</div>
+                  <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                    {speaker.id}
+                    {speaker.status === SpeakerStatus.REGISTERED && (
+                      <span className="flex items-center gap-0.5 px-1 rounded bg-indigo-50 text-indigo-600 text-[8px] font-bold uppercase">
+                        <Fingerprint size={8} /> 已关联声纹
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
+              <button 
+                onClick={() => onEditSpeaker(speaker.id)}
+                className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                title="编辑"
+              >
+                <Edit2 size={16} />
+              </button>
             </div>
-            <button 
-              onClick={() => onEditSpeaker(speaker.id)}
-              className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-            >
-              <Edit2 size={16} />
-            </button>
-          </div>
-        ))}
+          ))
+        )}
       </div>
     </BaseModal>
   );

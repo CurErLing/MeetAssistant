@@ -1,5 +1,6 @@
+
 import { useState, useEffect } from 'react';
-import { MeetingFile, Speaker, SpeakerStatus, VoiceprintProfile, Hotword, Template, ViewState, Folder, ShareConfig } from '../types';
+import { MeetingFile, Speaker, SpeakerStatus, VoiceprintProfile, Hotword, Template, ViewState, Folder, ShareConfig, TranscriptSegment } from '../types';
 import { transcribeAudio } from '../services/geminiService';
 import { sliceAudio, getAudioDuration } from '../services/audioUtils';
 import { supabaseService } from '../services/supabaseService';
@@ -204,6 +205,21 @@ export const useAppStore = () => {
     }
   };
 
+  const generateSpeakersFromTranscript = (transcript: TranscriptSegment[]) => {
+    const uniqueIds = Array.from(new Set(transcript.map(s => s.speakerId)));
+    const newSpeakers: Record<string, Speaker> = {};
+    uniqueIds.forEach((sid, idx) => {
+       newSpeakers[sid] = {
+          id: sid,
+          defaultLabel: `发言人 ${idx + 1}`,
+          name: `发言人 ${idx + 1}`,
+          status: SpeakerStatus.IDENTIFIED,
+          color: SPEAKER_COLORS[idx % SPEAKER_COLORS.length]
+       };
+    });
+    return newSpeakers;
+  };
+
   const createMeeting = async (file: File, trimStart = 0, trimEnd = 0, source: 'upload' | 'recording' | 'hardware' = 'upload') => {
     let fileToProcess = file;
     if (trimStart > 0 || (trimEnd > 0 && trimEnd < file.size)) {
@@ -260,10 +276,14 @@ export const useAppStore = () => {
       // Gemini Transcribe
       const transcript = await transcribeAudio(fileToProcess);
       
+      // Auto-populate speakers
+      const speakers = generateSpeakersFromTranscript(transcript);
+
       // Update Meeting with result
       const updates = { 
         status: 'ready' as const, 
-        transcript 
+        transcript,
+        speakers
       };
       
       setMeetings(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
@@ -327,7 +347,8 @@ export const useAppStore = () => {
     if (fileToProcess) {
       try {
         const transcript = await transcribeAudio(fileToProcess);
-        updateMeeting(id, { status: 'ready', transcript });
+        const speakers = generateSpeakersFromTranscript(transcript);
+        updateMeeting(id, { status: 'ready', transcript, speakers });
       } catch (error) {
         updateMeeting(id, { status: 'error' });
       }
