@@ -10,6 +10,8 @@ export { generateMockTranscript };
 
 // 指定使用的模型版本
 const MODEL_ID = 'gemini-3-flash-preview';
+// 使用支持搜索的模型进行 URL 解析
+const SEARCH_MODEL_ID = 'gemini-3-pro-preview';
 
 // --- Client Helper ---
 // 安全获取 Gemini 客户端实例，如果未配置 Key 则返回 null
@@ -123,5 +125,111 @@ export const generateMeetingSummary = async (
   } catch (error) {
     console.error("Summary generation error:", error);
     return "生成总结时发生错误，请重试。错误信息：" + error;
+  }
+};
+
+/**
+ * 核心功能 3：解析外部内容模版 (Parse External Templates)
+ * 支持两种模式：
+ * A. 输入 URL：使用 Google Search Grounding 尝试访问页面（仅限公开索引页面）。
+ * B. 输入文本/CSV：直接解析用户粘贴的内容（适用于飞书/Lark 等权限受限的页面，用户可直接复制内容粘贴）。
+ */
+export const parseExternalTemplates = async (input: string): Promise<Template[]> => {
+  const ai = getGeminiClient();
+  if (!ai) throw new Error("API Key missing");
+
+  // 简单的 URL 检测
+  const isUrl = /^(http|https):\/\/[^ "]+$/.test(input.trim());
+
+  let prompt = "";
+  let tools: any[] = [];
+
+  if (isUrl) {
+    prompt = `
+      Please visit the following URL and analyze its content to extract "Meeting Analysis Templates" or similar structured data.
+      URL: ${input}
+
+      This is likely a document containing template definitions.
+      Look for text that represents:
+      - Template Name
+      - Prompt / Instruction (The system prompt for AI)
+      - Description
+      - Category (e.g., Meeting, Interview, General)
+      - Icon Name (Infer a suitable Lucide icon name like 'FileText', 'Zap', 'Users', 'Star' based on content)
+
+      Return a JSON array of template objects.
+    `;
+    tools = [{ googleSearch: {} }];
+  } else {
+    // 文本/内容粘贴模式
+    prompt = `
+      Analyze the following text content, which is copied from a spreadsheet or document (e.g., Feishu/Lark Base).
+      Extract structured "Meeting Analysis Templates" from it.
+      
+      Raw Content:
+      """
+      ${input.substring(0, 10000)} 
+      """
+
+      Task: Identify rows or sections that define a template. 
+      For each template found, extract:
+      - name: The title of the template.
+      - prompt: The detailed AI instruction/prompt.
+      - description: A brief summary (if available, otherwise infer from name).
+      - category: A category (infer if not explicit, e.g., 'Meeting', 'General').
+      - icon: Infer a suitable Lucide icon name string.
+      
+      Return a JSON array.
+    `;
+    // No tools needed for text processing
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: SEARCH_MODEL_ID,
+      contents: prompt,
+      config: {
+        tools: tools.length > 0 ? tools : undefined,
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING },
+              category: { type: Type.STRING },
+              prompt: { type: Type.STRING },
+              icon: { type: Type.STRING },
+              tags: { type: Type.ARRAY, items: { type: Type.STRING } }
+            },
+            required: ["name", "prompt"]
+          }
+        }
+      }
+    });
+
+    const resultText = response.text || "[]";
+    const rawTemplates = JSON.parse(resultText);
+
+    // Enhance with local IDs and defaults
+    return rawTemplates.map((t: any, idx: number) => ({
+      id: `tpl_ext_${Date.now()}_${idx}`,
+      name: t.name || "未命名模版",
+      description: t.description || "从外部导入的模版",
+      category: t.category || "通用",
+      tags: t.tags || ["导入"],
+      icon: t.icon || "FileText",
+      prompt: t.prompt || "无指令",
+      usageCount: 0,
+      isCustom: true,
+      author: isUrl ? "链接解析" : "文本粘贴",
+      isStarred: false,
+      isUserCreated: true
+    }));
+
+  } catch (error) {
+    console.error("External parse error:", error);
+    throw new Error("解析失败。如果是私有文档（如飞书文档），请尝试直接复制表格内容并粘贴到输入框中。");
   }
 };

@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
-import { PlusCircle, Heart } from 'lucide-react';
+import { PlusCircle, Heart, Link as LinkIcon } from 'lucide-react';
 import { Template } from '../../../types';
 import { CreateTemplateModal, TemplateDetailModal } from '../../modals/TemplateModals';
+import { SyncTemplatesModal } from '../../modals/SyncTemplatesModal';
 import { TemplateCard } from './TemplateCard';
 import { FilterBar } from './FilterBar';
 
@@ -24,6 +25,7 @@ export const TemplateManagerView = ({
   const [activeMainTab, setActiveMainTab] = useState<'mine' | 'explore'>('explore');
   const [activeFilter, setActiveFilter] = useState('全部');
   const [isCreatingModalOpen, setIsCreatingModalOpen] = useState(false);
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(initialSelectedId || null);
 
   const starredTemplates = templates.filter(t => t.isStarred);
@@ -46,6 +48,16 @@ export const TemplateManagerView = ({
              setIsCreatingModalOpen(false);
            }}
            onClose={() => setIsCreatingModalOpen(false)}
+         />
+       )}
+
+       {isSyncModalOpen && (
+         <SyncTemplatesModal 
+           onImport={(importedTemplates) => {
+             // Batch add templates
+             importedTemplates.forEach(t => onAdd(t));
+           }}
+           onClose={() => setIsSyncModalOpen(false)}
          />
        )}
 
@@ -83,6 +95,12 @@ export const TemplateManagerView = ({
                  <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                    我的作品 <span className="text-xs font-normal text-slate-400">({myOwnTemplates.length})</span>
                  </h3>
+                 <button 
+                   onClick={() => setIsSyncModalOpen(true)}
+                   className="text-xs font-bold text-blue-600 bg-blue-50 px-3 py-1.5 rounded-lg hover:bg-blue-100 transition-colors flex items-center gap-1.5"
+                 >
+                    <LinkIcon size={14} /> 从飞书同步
+                 </button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
                  <button 

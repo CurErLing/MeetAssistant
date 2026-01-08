@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Copy, Check, Users, LogOut, ArrowRight, ShieldCheck, Edit2, Plus, LogIn, X, Building } from 'lucide-react';
+import { User, Copy, Check, Users, LogOut, ArrowRight, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 
 interface ProfileViewProps {
@@ -12,7 +12,7 @@ interface ProfileViewProps {
   onLogout?: () => void;
 }
 
-// Simple fallback UUID generator if crypto is not available (e.g. non-secure context)
+// Simple fallback UUID generator
 const generateUUID = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -54,14 +54,19 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
 
   const handleSaveTeam = () => {
     if (inputTeamId.trim() && inputTeamId !== teamId) {
+      // Basic UUID format check
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(inputTeamId.trim())) {
+          alert("无效的 Team ID 格式。请输入有效的 UUID。");
+          return;
+      }
       onSwitchTeam(inputTeamId.trim());
-      setTeamMode('select'); // Reset to selection mode after saving
+      setTeamMode('select');
       setInputTeamId('');
     }
   };
 
   const handleCreateTeam = () => {
-    // Generate a new UUID for the new team using safe generator
     const newTeamId = generateUUID();
     if (confirm("系统将为您生成一个新的团队 ID 并自动切换。\n确认创建吗？")) {
         onSwitchTeam(newTeamId);
@@ -138,13 +143,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
            <section>
               <h3 className="text-sm font-bold text-slate-400 uppercase tracking-wider mb-4 border-b border-slate-100 pb-2">基础信息</h3>
               <div className="bg-slate-50 rounded-xl p-4 border border-slate-100 flex items-center justify-between group">
-                 <div>
+                 <div className="flex-1 min-w-0 mr-4">
                     <div className="text-xs text-slate-500 mb-1">用户 ID (User ID)</div>
                     <div className="font-mono font-bold text-slate-700 text-sm break-all">{userId || "Loading..."}</div>
                  </div>
                  <button 
                    onClick={handleCopyId}
-                   className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm"
+                   className="p-2 bg-white border border-slate-200 rounded-lg text-slate-500 hover:text-blue-600 hover:border-blue-200 transition-all shadow-sm flex-shrink-0"
                    title="复制 ID"
                  >
                     {isCopied ? <Check size={18} className="text-green-600"/> : <Copy size={18} />}
@@ -166,12 +171,12 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                     </div>
                     <div className="flex-1 w-full">
                        <h4 className="font-bold text-slate-800 mb-1">团队空间设置</h4>
-                       <p className="text-sm text-slate-500 mb-4">
+                       <p className="text-sm text-slate-500 mb-4 leading-relaxed">
                           所有拥有相同团队 ID 的成员将共享会议记录、声纹库和热词配置。
                        </p>
                        
                        {teamId ? (
-                           <div className="bg-green-50 rounded-xl p-4 border border-green-100 animate-fade-in">
+                           <div className="bg-green-50 rounded-xl p-4 border border-green-100 animate-fade-in relative overflow-hidden">
                               <div className="flex items-center gap-2 mb-2 text-green-800 font-bold">
                                  <Building size={18} />
                                  <span>所属团队</span>
@@ -184,7 +189,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 variant="danger"
                                 size="sm"
                                 icon={<LogOut size={14} />}
-                                className="w-full justify-center bg-white border border-red-200 text-red-600 hover:bg-red-50"
+                                className="w-full justify-center bg-white border border-red-200 text-red-600 hover:bg-red-50 shadow-sm"
                               >
                                 退出团队
                               </Button>
@@ -195,31 +200,37 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <button 
                                         onClick={handleCreateTeam}
-                                        className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-all group"
+                                        className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-all group h-32"
                                       >
-                                         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 group-hover:text-indigo-600">
+                                         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 group-hover:text-indigo-600 border border-slate-100">
                                             <Plus size={20} />
                                          </div>
-                                         <span className="font-bold text-sm">注册新团队</span>
-                                         <span className="text-[10px] text-slate-400 font-normal">生成新的唯一 ID</span>
+                                         <div className="text-center">
+                                            <span className="font-bold text-sm block text-slate-700 group-hover:text-indigo-700">注册新团队</span>
+                                            <span className="text-[10px] text-slate-400 font-normal block mt-1">生成新的唯一 ID</span>
+                                         </div>
                                       </button>
 
                                       <button 
                                         onClick={() => setTeamMode('join')}
-                                        className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-all group"
+                                        className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700 transition-all group h-32"
                                       >
-                                         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 group-hover:text-blue-600">
+                                         <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 group-hover:text-blue-600 border border-slate-100">
                                             <LogIn size={20} />
                                          </div>
-                                         <span className="font-bold text-sm">加入现有团队</span>
-                                         <span className="text-[10px] text-slate-400 font-normal">输入 ID 进行绑定</span>
+                                         <div className="text-center">
+                                            <span className="font-bold text-sm block text-slate-700 group-hover:text-blue-700">加入现有团队</span>
+                                            <span className="text-[10px] text-slate-400 font-normal block mt-1">输入 ID 进行绑定</span>
+                                         </div>
                                       </button>
                                    </div>
                                ) : (
                                    <div className="animate-fade-in bg-slate-50 p-4 rounded-xl border border-slate-200">
                                       <div className="flex justify-between items-center mb-2">
-                                        <span className="text-xs font-bold text-slate-500 uppercase">输入团队 ID</span>
-                                        <button onClick={() => setTeamMode('select')} className="text-slate-400 hover:text-slate-600">
+                                        <span className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">
+                                            <LogIn size={12} /> 输入团队 ID
+                                        </span>
+                                        <button onClick={() => setTeamMode('select')} className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-200 rounded transition-colors">
                                            <X size={16} />
                                         </button>
                                       </div>
@@ -239,6 +250,10 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                             绑定
                                           </Button>
                                       </div>
+                                      <div className="flex items-start gap-1.5 mt-3 text-[10px] text-slate-400">
+                                         <AlertCircle size={12} className="flex-shrink-0 mt-0.5" />
+                                         <p>请向团队管理员索取 Team ID。绑定后，您的本地数据将与团队空间合并。</p>
+                                      </div>
                                    </div>
                                )}
                            </>
@@ -252,7 +267,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
            <div className="pt-6 border-t border-slate-100 flex justify-center">
               <button 
                 onClick={onLogout}
-                className="flex items-center gap-2 text-slate-400 hover:text-red-600 px-4 py-2 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
+                className="flex items-center gap-2 text-slate-400 hover:text-red-600 px-6 py-2 rounded-lg hover:bg-red-50 transition-colors text-sm font-medium"
               >
                  <LogOut size={16} /> 退出登录
               </button>

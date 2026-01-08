@@ -16,6 +16,8 @@ interface FolderSectionProps {
   onRenameFolder: (id: string, name: string) => void;
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
+  isOpen: boolean;
+  onToggle: (isOpen: boolean) => void;
 }
 
 export const FolderSection: React.FC<FolderSectionProps> = ({
@@ -25,9 +27,10 @@ export const FolderSection: React.FC<FolderSectionProps> = ({
   onAddFolder,
   onRenameFolder,
   onDeleteFolder,
-  onShareFolder
+  onShareFolder,
+  isOpen,
+  onToggle
 }) => {
-  const [isFoldersOpen, setIsFoldersOpen] = useState(true);
   const [showFolderInput, setShowFolderInput] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   
@@ -108,10 +111,10 @@ export const FolderSection: React.FC<FolderSectionProps> = ({
       )}
 
       {/* --- Header --- */}
-      <div className="flex items-center justify-between px-3 py-2 group cursor-pointer" onClick={() => setIsFoldersOpen(!isFoldersOpen)}>
+      <div className="flex items-center justify-between px-3 py-2 group cursor-pointer" onClick={() => onToggle(!isOpen)}>
         <div className="flex items-center gap-2">
           <span className="text-base font-medium text-slate-500">文件夹</span>
-          {isFoldersOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
+          {isOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
         </div>
         <button 
           onClick={(e) => { e.stopPropagation(); setShowFolderInput(!showFolderInput); setNewFolderName(''); }} 
@@ -146,7 +149,7 @@ export const FolderSection: React.FC<FolderSectionProps> = ({
         </div>
       )}
       
-      {isFoldersOpen && (
+      {isOpen && (
         <div className="mt-2 space-y-1 animate-fade-in pl-1">
           {folders.length > 0 ? folders.map(f => {
             return (

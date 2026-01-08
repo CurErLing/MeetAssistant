@@ -7,6 +7,7 @@ import {
 import { ViewState, Folder } from '../../types';
 import { SidebarNavItem } from './SidebarNavItem';
 import { FolderSection } from './FolderSection';
+import { KnowledgeSection } from './KnowledgeSection';
 import { SidebarFooter } from './SidebarFooter';
 import { Drawer } from '../common/Drawer';
 
@@ -37,13 +38,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   userName
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-
-  // Home is handled separately now
-  const managementNav = [
-    { view: 'templates', label: '模板管理', icon: <LayoutTemplate size={20} /> },
-    { view: 'voiceprints', label: '声纹管理', icon: <AudioLines size={20} /> },
-    { view: 'hotwords', label: '热词管理', icon: <Tag size={20} /> },
-  ];
+  const [isFolderOpen, setIsFolderOpen] = useState(true);
+  const [isKnowledgeOpen, setIsKnowledgeOpen] = useState(true);
 
   const handleViewChange = (view: ViewState) => {
     if (view === 'home') onSelectFolder(null);
@@ -83,23 +79,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
               isActive={(currentView === 'list' || currentView === 'detail') && !selectedFolderId} 
               onClick={() => { 
                 onSelectFolder(null); 
-                handleViewChange('list'); 
+                handleViewChange('list');
               }} 
               count={meetingsCount} 
             />
 
-          {/* 3. Management Items */}
-          {managementNav.map(item => (
-            <SidebarNavItem 
-              key={item.view} 
-              icon={item.icon}
-              label={item.label}
-              isActive={currentView === item.view} 
-              onClick={() => handleViewChange(item.view as ViewState)} 
-            />
-          ))}
+          {/* 3. Folders */}
+          <FolderSection 
+             folders={folders}
+             selectedFolderId={selectedFolderId}
+             onSelectFolder={handleFolderSelect}
+             onAddFolder={onAddFolder}
+             onRenameFolder={onRenameFolder}
+             onDeleteFolder={onDeleteFolder}
+             onShareFolder={onShareFolder}
+             isOpen={isFolderOpen}
+             onToggle={setIsFolderOpen}
+          />
 
-          {/* 4. Recycle Bin (Separated) */}
+          {/* 4. Knowledge Base (Templates, Voiceprints, Hotwords) */}
+          <KnowledgeSection 
+            currentView={currentView}
+            onChangeView={handleViewChange}
+            isOpen={isKnowledgeOpen}
+            onToggle={setIsKnowledgeOpen}
+          />
+
+          {/* 5. Recycle Bin (Separated) */}
           <div className="mt-8 mb-6">
             <SidebarNavItem 
               icon={<Trash2 size={20} />} 
@@ -109,17 +115,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
               count={deletedCount} 
             />
           </div>
-
-          {/* Folders */}
-          <FolderSection 
-             folders={folders}
-             selectedFolderId={selectedFolderId}
-             onSelectFolder={handleFolderSelect}
-             onAddFolder={onAddFolder}
-             onRenameFolder={onRenameFolder}
-             onDeleteFolder={onDeleteFolder}
-             onShareFolder={onShareFolder}
-          />
         </nav>
 
         <SidebarFooter 
