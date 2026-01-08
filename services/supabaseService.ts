@@ -63,17 +63,94 @@ const mapHotwordFromDB = (row: any): Hotword => ({
 // --- Service Methods ---
 
 export const supabaseService = {
-  // Helper to get current user
+  // Helper to ensure valid UUID
+  _ensureUUID(id: string | null): string {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!id || !isUUID(id)) {
+      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+      } else {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+      }
+    }
+    return id;
+  },
+
+  // Helper: Generate a consistent UUID from a string (e.g., email or phone)
+  // This simulates a consistent user ID for "Login" without a real backend auth provider setup
+  async _generateUUIDFromString(input: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(input + "_salt_jimu");
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    
+    // Construct UUID from hash (8-4-4-4-12)
+    return [
+      hashHex.substring(0, 8),
+      hashHex.substring(8, 12),
+      '4' + hashHex.substring(13, 16), // UUID version 4
+      'a' + hashHex.substring(17, 20), // Variant
+      hashHex.substring(20, 32)
+    ].join('-');
+  },
+
+  // Get current user ID (returns null if not logged in)
   async getCurrentUserId() {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user?.id;
+    const STORAGE_KEY = 'jimu_app_user_id';
+    let userId = localStorage.getItem(STORAGE_KEY);
+    if (!userId) return null;
+    
+    userId = this._ensureUUID(userId);
+    return userId;
+  },
+
+  // Login simulation: Generate/Get ID based on credentials
+  async login(identifier: string) {
+    const STORAGE_KEY = 'jimu_app_user_id';
+    const userId = await this._generateUUIDFromString(identifier);
+    localStorage.setItem(STORAGE_KEY, userId);
+    return userId;
+  },
+
+  async logout() {
+    const STORAGE_KEY = 'jimu_app_user_id';
+    localStorage.removeItem(STORAGE_KEY);
+  },
+
+  // Helper to get current TEAM ID (Scope)
+  async getCurrentTeamId() {
+    const STORAGE_KEY = 'jimu_app_team_id';
+    let teamId = localStorage.getItem(STORAGE_KEY);
+    teamId = this._ensureUUID(teamId);
+    localStorage.setItem(STORAGE_KEY, teamId);
+    return teamId;
+  },
+
+  // Allow switching teams (UI only for now)
+  async setTeamId(newTeamId: string) {
+    if (newTeamId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newTeamId)) {
+        localStorage.setItem('jimu_app_team_id', newTeamId);
+        window.location.reload();
+    } else {
+        alert("无效的 Team ID 格式 (必须是 UUID)");
+    }
   },
 
   // --- Meetings ---
   async fetchMeetings(): Promise<{ active: MeetingFile[], deleted: MeetingFile[] }> {
+    const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return { active: [], deleted: [] };
+
+    // Fetch user's own meetings OR meetings shared in the team
     const { data, error } = await supabase
       .from('meetings')
       .select('*')
+      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -102,7 +179,11 @@ export const supabaseService = {
 
   async createMeeting(meeting: MeetingFile, audioBlob: Blob) {
     const userId = await this.getCurrentUserId();
-    const audioPath = `${meeting.id}.${meeting.format}`;
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) throw new Error("Not logged in");
+
+    // Revert storage path to user_id to match data isolation
+    const audioPath = `${userId}/${meeting.id}.${meeting.format}`; 
     const uploadedPath = await this.uploadAudio(audioBlob, audioPath);
 
     if (!uploadedPath) throw new Error("Audio upload failed");
@@ -110,7 +191,7 @@ export const supabaseService = {
     const row = {
       id: meeting.id,
       name: meeting.name,
-      duration: Math.round(meeting.duration || 0), // Ensure integer for DB
+      duration: Math.round(meeting.duration || 0), 
       format: meeting.format,
       created_at: meeting.uploadDate.toISOString(),
       last_accessed_at: meeting.lastAccessedAt ? meeting.lastAccessedAt.toISOString() : new Date().toISOString(),
@@ -123,7 +204,8 @@ export const supabaseService = {
       is_read_only: meeting.isReadOnly || false,
       audio_url: uploadedPath,
       deleted_at: null,
-      user_id: userId // Add user_id
+      user_id: userId,
+      team_id: teamId
     };
 
     const { error } = await supabase.from('meetings').insert(row);
@@ -134,7 +216,6 @@ export const supabaseService = {
   },
 
   async updateMeeting(id: string, updates: Partial<MeetingFile>) {
-    // Map partial updates to DB columns
     const dbUpdates: any = {};
     if (updates.name !== undefined) dbUpdates.name = updates.name;
     if (updates.folderId !== undefined) dbUpdates.folder_id = updates.folderId;
@@ -151,31 +232,42 @@ export const supabaseService = {
   },
 
   async deleteMeetingPermanent(id: string, format: string) {
-    // Delete from DB
+    const userId = await this.getCurrentUserId();
+    if (!userId) return;
     await supabase.from('meetings').delete().eq('id', id);
-    // Delete from Storage
-    await supabase.storage.from('meeting-recordings').remove([`${id}.${format}`]);
+    // Revert path to user_id
+    await supabase.storage.from('meeting-recordings').remove([`${userId}/${id}.${format}`, `${id}.${format}`]);
   },
 
   // --- Folders ---
   async fetchFolders(): Promise<Folder[]> {
-    const { data, error } = await supabase.from('folders').select('*');
+    const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return [];
+
+    const { data, error } = await supabase
+      .from('folders')
+      .select('*')
+      .or(`user_id.eq.${userId},team_id.eq.${teamId}`);
+      
     if (error) {
       console.error('Error fetching folders:', JSON.stringify(error, null, 2));
       return [];
     }
     
-    // We need to reconstruct meetingIds manually or fetch them. 
-    // For simplicity, we'll let the AppStore logic handle the `meetingIds` array based on the `folderId` in meetings.
     return data.map(mapFolderFromDB);
   },
 
   async createFolder(folder: Folder) {
     const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return;
+
     const { error } = await supabase.from('folders').insert({ 
       id: folder.id, 
       name: folder.name,
-      user_id: userId 
+      user_id: userId,
+      team_id: teamId
     });
     if (error) console.error('Error creating folder:', JSON.stringify(error, null, 2));
   },
@@ -191,7 +283,16 @@ export const supabaseService = {
 
   // --- Voiceprints ---
   async fetchVoiceprints(): Promise<VoiceprintProfile[]> {
-    const { data, error } = await supabase.from('voiceprints').select('*').order('created_at', { ascending: false });
+    const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return [];
+
+    const { data, error } = await supabase
+      .from('voiceprints')
+      .select('*')
+      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
+      .order('created_at', { ascending: false });
+
     if (error) {
       console.error('Error fetching voiceprints:', JSON.stringify(error, null, 2));
       return [];
@@ -201,21 +302,30 @@ export const supabaseService = {
 
   async createVoiceprint(vp: VoiceprintProfile, audioBlob?: Blob) {
     const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return;
+
     if (audioBlob) {
-       await supabase.storage.from('meeting-recordings').upload(`voiceprints/${vp.id}`, audioBlob);
+       // Revert path to user_id
+       await supabase.storage.from('meeting-recordings').upload(`${userId}/voiceprints/${vp.id}`, audioBlob);
     }
     const { error } = await supabase.from('voiceprints').insert({
       id: vp.id,
       name: vp.name,
       created_at: vp.createdAt.toISOString(),
-      user_id: userId
+      user_id: userId,
+      team_id: teamId
     });
     if (error) console.error('Error creating voiceprint:', JSON.stringify(error, null, 2));
   },
 
   async updateVoiceprint(id: string, name?: string, audioBlob?: Blob) {
+    const userId = await this.getCurrentUserId();
+    if (!userId) return;
+
     if (audioBlob) {
-        await supabase.storage.from('meeting-recordings').upload(`voiceprints/${id}`, audioBlob, { upsert: true });
+        // Revert path to user_id
+        await supabase.storage.from('meeting-recordings').upload(`${userId}/voiceprints/${id}`, audioBlob, { upsert: true });
     }
     if (name) {
         await supabase.from('voiceprints').update({ name }).eq('id', id);
@@ -223,13 +333,30 @@ export const supabaseService = {
   },
 
   async deleteVoiceprint(id: string) {
+    const userId = await this.getCurrentUserId();
+    if (!userId) return;
+
     await supabase.from('voiceprints').delete().eq('id', id);
-    await supabase.storage.from('meeting-recordings').remove([`voiceprints/${id}`]);
+    // Revert path to user_id
+    await supabase.storage.from('meeting-recordings').remove([`${userId}/voiceprints/${id}`]);
   },
 
   // --- Templates ---
   async fetchTemplates(): Promise<Template[]> {
-    const { data, error } = await supabase.from('templates').select('*');
+    const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    
+    // Fetch system templates (user_id is null) OR user's templates OR team's templates
+    let query = supabase.from('templates').select('*');
+    
+    if (userId) {
+        query = query.or(`user_id.eq.${userId},team_id.eq.${teamId},user_id.is.null`);
+    } else {
+        query = query.is('user_id', null);
+    }
+
+    const { data, error } = await query;
+
     if (error) {
        console.error('Error fetching templates:', JSON.stringify(error, null, 2));
        return [];
@@ -239,6 +366,9 @@ export const supabaseService = {
 
   async createTemplate(t: Template) {
     const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return;
+
     const { error } = await supabase.from('templates').insert({
       id: t.id,
       name: t.name,
@@ -252,15 +382,13 @@ export const supabaseService = {
       author: t.author,
       is_starred: t.isStarred,
       is_user_created: t.isUserCreated,
-      user_id: userId
+      user_id: userId,
+      team_id: teamId
     });
     if (error) console.error('Error creating template:', JSON.stringify(error, null, 2));
   },
 
   async seedTemplates(templates: Template[]) {
-    // Seed templates might be system-wide, but if we need user_id, we might need to handle it.
-    // Assuming seed templates don't strictly require user_id or use a system ID.
-    const userId = await this.getCurrentUserId();
     const rows = templates.map(t => ({
       id: t.id,
       name: t.name,
@@ -274,7 +402,8 @@ export const supabaseService = {
       author: t.author,
       is_starred: t.isStarred,
       is_user_created: t.isUserCreated,
-      user_id: userId // This might be null if not logged in during seed
+      user_id: null,
+      team_id: null
     }));
     
     const { error } = await supabase.from('templates').upsert(rows, { onConflict: 'id' });
@@ -297,7 +426,16 @@ export const supabaseService = {
 
   // --- Hotwords ---
   async fetchHotwords(): Promise<Hotword[]> {
-    const { data, error } = await supabase.from('hotwords').select('*').order('created_at', { ascending: false });
+    const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return [];
+
+    const { data, error } = await supabase
+      .from('hotwords')
+      .select('*')
+      .or(`user_id.eq.${userId},team_id.eq.${teamId}`)
+      .order('created_at', { ascending: false });
+
     if (error) {
        console.error('Error fetching hotwords:', JSON.stringify(error, null, 2));
        return [];
@@ -307,12 +445,16 @@ export const supabaseService = {
 
   async createHotword(h: Hotword) {
     const userId = await this.getCurrentUserId();
+    const teamId = await this.getCurrentTeamId();
+    if (!userId) return;
+
     await supabase.from('hotwords').insert({
       id: h.id,
       word: h.word,
       category: h.category,
       created_at: h.createdAt.toISOString(),
-      user_id: userId
+      user_id: userId,
+      team_id: teamId
     });
   },
 

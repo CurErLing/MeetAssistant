@@ -10,6 +10,8 @@ import { VoiceprintManagerView } from './components/views/manager/VoiceprintMana
 import { HotwordManagerView } from './components/views/manager/HotwordManagerView';
 import { TemplateManagerView } from './components/views/template';
 import { RecycleBinView } from './components/views/recycle-bin';
+import { ProfileView } from './components/views/profile/ProfileView';
+import { AuthView } from './components/views/auth/AuthView';
 import { GlobalModals } from './components/GlobalModals';
 import { MainLayout } from './components/layout/MainLayout';
 import { ViewState } from './types';
@@ -94,6 +96,22 @@ const App = () => {
     }
   };
 
+  // --- Auth & Loading Guards ---
+
+  if (store.isLoading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-50">
+         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // Not logged in
+  if (!store.userId) {
+    return <AuthView onLogin={store.login} />;
+  }
+
+  // External Share View (public access, usually wouldn't need login, but in this logic we assume app access requires login first unless the route was handled outside App.tsx)
   if (store.view === 'external-share' && store.activeMeeting) {
     return (
       <ExternalShareView 
@@ -180,6 +198,12 @@ const App = () => {
         onRenameFolder={store.updateFolder}
         onDeleteFolder={store.deleteFolder}
         onShareFolder={handleShareFolder}
+        teamId={store.teamId}
+        onSwitchTeam={store.joinTeam}
+        onProfileClick={() => {
+          store.setView('profile');
+          store.setSelectedFolderId(null);
+        }}
       >
           {store.view === 'home' && (
             <HomeView 
@@ -310,6 +334,15 @@ const App = () => {
               onRestore={store.restoreMeeting} 
               onPermanentDelete={store.permanentDeleteMeeting}
               onEmptyRecycleBin={store.emptyRecycleBin}
+            />
+          )}
+
+          {store.view === 'profile' && (
+            <ProfileView 
+              userId={store.userId || ''}
+              teamId={store.teamId}
+              onSwitchTeam={store.joinTeam}
+              onLogout={store.logout}
             />
           )}
       </MainLayout>

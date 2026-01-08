@@ -22,6 +22,8 @@ export const useAppStore = () => {
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [shareConfig, setShareConfig] = useState<ShareConfig | null>(null);
+  const [teamId, setTeamId] = useState<string>("");
+  const [userId, setUserId] = useState<string | null>(null); // userId can be null if not logged in
 
   // 数据状态
   const [meetings, setMeetings] = useState<MeetingFile[]>([]);
@@ -32,67 +34,100 @@ export const useAppStore = () => {
   const [templates, setTemplates] = useState<Template[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // --- 初始化：从 Supabase 加载数据 ---
+  // --- Data Fetcher Logic (Reused for init and login) ---
+  const fetchAllData = async () => {
+    setIsLoading(true);
+    try {
+      const currentTeamId = await supabaseService.getCurrentTeamId();
+      setTeamId(currentTeamId);
+
+      // 并行加载所有数据
+      const [
+        fetchedMeetings,
+        fetchedFolders,
+        fetchedTemplates,
+        fetchedVoiceprints,
+        fetchedHotwords
+      ] = await Promise.all([
+        supabaseService.fetchMeetings(),
+        supabaseService.fetchFolders(),
+        supabaseService.fetchTemplates(),
+        supabaseService.fetchVoiceprints(),
+        supabaseService.fetchHotwords()
+      ]);
+
+      // 检查并恢复默认模版
+      let finalTemplates = fetchedTemplates;
+      if (fetchedTemplates.length === 0) {
+        // Only seed if we have a user (though fetching templates usually handles null user for system templates)
+        // console.log("Templates empty, seeding defaults...");
+        // await supabaseService.seedTemplates(DEFAULT_TEMPLATES);
+        finalTemplates = DEFAULT_TEMPLATES; 
+      }
+
+      // 处理会议数据 (合并模拟共享数据)
+      const allMeetings = [...fetchedMeetings.active, ...MOCK_SHARED_MEETINGS];
+      setMeetings(allMeetings);
+      setDeletedMeetings(fetchedMeetings.deleted);
+
+      // 处理文件夹关联
+      const foldersWithIds = fetchedFolders.map(f => ({
+        ...f,
+        meetingIds: allMeetings.filter(m => m.folderId === f.id).map(m => m.id)
+      }));
+      
+      setFolders(foldersWithIds);
+      setTemplates(finalTemplates);
+      setVoiceprints(fetchedVoiceprints);
+      setHotwords(fetchedHotwords);
+
+    } catch (error) {
+      console.error("Failed to fetch data:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // --- 初始化：检查登录状态并加载数据 ---
   useEffect(() => {
-    const initData = async () => {
-      setIsLoading(true);
-      try {
-        // 并行加载所有数据
-        const [
-          fetchedMeetings,
-          fetchedFolders,
-          fetchedTemplates,
-          fetchedVoiceprints,
-          fetchedHotwords
-        ] = await Promise.all([
-          supabaseService.fetchMeetings(),
-          supabaseService.fetchFolders(),
-          supabaseService.fetchTemplates(),
-          supabaseService.fetchVoiceprints(),
-          supabaseService.fetchHotwords()
-        ]);
-
-        // 检查并恢复默认模版
-        let finalTemplates = fetchedTemplates;
-        if (fetchedTemplates.length === 0) {
-          console.log("Templates empty, seeding defaults...");
-          await supabaseService.seedTemplates(DEFAULT_TEMPLATES);
-          finalTemplates = DEFAULT_TEMPLATES; // 乐观更新，不需要重新fetch
-        }
-
-        // 处理会议数据 (合并模拟共享数据)
-        const allMeetings = [...fetchedMeetings.active, ...MOCK_SHARED_MEETINGS];
-        setMeetings(allMeetings);
-        setDeletedMeetings(fetchedMeetings.deleted);
-
-        // 处理文件夹关联
-        // Supabase folders表不直接存 meetingIds，我们在前端计算
-        const foldersWithIds = fetchedFolders.map(f => ({
-          ...f,
-          meetingIds: allMeetings.filter(m => m.folderId === f.id).map(m => m.id)
-        }));
-        
-        // 直接使用数据库中的文件夹，不使用默认内存文件夹，避免 FK 冲突
-        setFolders(foldersWithIds);
-        
-        setTemplates(finalTemplates);
-        setVoiceprints(fetchedVoiceprints);
-        setHotwords(fetchedHotwords);
-
-      } catch (error) {
-        console.error("Failed to initialize data from Supabase:", error);
-      } finally {
-        setIsLoading(false);
+    const init = async () => {
+      const storedUserId = await supabaseService.getCurrentUserId();
+      if (storedUserId) {
+        setUserId(storedUserId);
+        await fetchAllData();
+      } else {
+        setIsLoading(false); // No user, stop loading to show AuthView
       }
     };
-
-    initData();
+    init();
   }, []);
 
   // --- Helper Getter ---
   const activeMeeting = meetings.find(m => m.id === activeMeetingId) || null;
 
   // --- Actions ---
+
+  const login = async (identifier: string) => {
+    setIsLoading(true);
+    const newUserId = await supabaseService.login(identifier);
+    setUserId(newUserId);
+    await fetchAllData();
+    setView('home'); // Reset view to home after login
+  };
+
+  const logout = async () => {
+    await supabaseService.logout();
+    setUserId(null);
+    setMeetings([]);
+    setFolders([]);
+    setVoiceprints([]);
+    setHotwords([]);
+    setView('home');
+  };
+
+  const joinTeam = (newTeamId: string) => {
+    supabaseService.setTeamId(newTeamId);
+  };
 
   const accessMeeting = (id: string) => {
     // 乐观更新 UI
@@ -452,14 +487,19 @@ export const useAppStore = () => {
     hotwords,
     templates,
     isLoading,
+    teamId, // Export Team ID
+    userId, // Export User ID
 
+    login,
+    logout,
+    joinTeam, // Export Team Switcher
     createMeeting,
     accessMeeting,
     updateMeeting,
     deleteMeeting,
     restoreMeeting,
     permanentDeleteMeeting,
-    emptyRecycleBin, // Export new function
+    emptyRecycleBin,
     moveMeetingToFolder,
     toggleStarMeeting,
     duplicateMeeting,

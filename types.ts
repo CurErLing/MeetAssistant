@@ -154,4 +154,4 @@ export interface ShareConfig {
 /**
  * 全局视图状态类型
  */
-export type ViewState = 'home' | 'list' | 'detail' | 'voiceprints' | 'hotwords' | 'external-share' | 'templates' | 'recycle-bin';
+export type ViewState = 'home' | 'list' | 'detail' | 'voiceprints' | 'hotwords' | 'external-share' | 'templates' | 'recycle-bin' | 'profile';

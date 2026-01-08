@@ -8,12 +8,18 @@ interface SidebarFooterProps {
   isHardwareConnecting: boolean;
   onConnectHardware: () => void;
   onCloseMobileMenu?: () => void;
+  teamId?: string;
+  onSwitchTeam?: (id: string) => void;
+  onProfileClick?: () => void;
 }
 
 export const SidebarFooter: React.FC<SidebarFooterProps> = ({
   isHardwareConnecting,
   onConnectHardware,
-  onCloseMobileMenu
+  onCloseMobileMenu,
+  teamId,
+  onSwitchTeam,
+  onProfileClick
 }) => {
   return (
     <div className="p-4 bg-slate-50 border-t border-slate-100 space-y-4">
@@ -44,6 +50,12 @@ export const SidebarFooter: React.FC<SidebarFooterProps> = ({
        <UserProfile 
          name="邱" 
          role="Pro 版本" 
+         teamId={teamId}
+         onSwitchTeam={onSwitchTeam}
+         onProfileClick={() => {
+            if (onProfileClick) onProfileClick();
+            if (onCloseMobileMenu) onCloseMobileMenu();
+         }}
          onLogout={() => console.log("Logout clicked")} 
        />
     </div>

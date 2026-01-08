@@ -24,12 +24,15 @@ interface SidebarProps {
   onRenameFolder: (id: string, name: string) => void;
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
+  teamId?: string;
+  onSwitchTeam?: (id: string) => void;
+  onProfileClick?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView, onChangeView, isHardwareConnecting, onConnectHardware,
   meetingsCount, deletedCount, folders, onAddFolder, selectedFolderId, onSelectFolder,
-  onRenameFolder, onDeleteFolder, onShareFolder
+  onRenameFolder, onDeleteFolder, onShareFolder, teamId, onSwitchTeam, onProfileClick
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -121,6 +124,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isHardwareConnecting={isHardwareConnecting}
           onConnectHardware={onConnectHardware}
           onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
+          teamId={teamId}
+          onSwitchTeam={onSwitchTeam}
+          onProfileClick={onProfileClick}
         />
     </div>
   );
@@ -142,7 +148,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <h1 className="text-sm font-bold text-slate-900 tracking-tight">积木会议助手</h1>
             </div>
           </div>
-          <button className="p-2 text-slate-500"><User size={20} /></button>
+          <button 
+            className="p-2 text-slate-500" 
+            onClick={() => {
+              if (onProfileClick) onProfileClick();
+            }}
+          >
+            <User size={20} />
+          </button>
         </div>
       </div>
 
