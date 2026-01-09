@@ -3,32 +3,24 @@ import React, { useState, useEffect } from 'react';
 import { User, Copy, Check, Users, LogOut, ShieldCheck, Edit2, Plus, LogIn, X, Building, AlertCircle } from 'lucide-react';
 import { Button } from '../../common/Button';
 import { ConfirmModal } from '../../modals/ConfirmModal';
+import { InputModal } from '../../modals/InputModal';
 import { useToast } from '../../common/Toast';
 
 interface ProfileViewProps {
   userId: string;
   userName: string;
   teamId: string;
-  onSwitchTeam: (id: string) => void;
+  teamName?: string;
+  onSwitchTeam: (id: string, name?: string) => Promise<void> | void;
   onUpdateName: (name: string) => void;
   onLogout?: () => void;
 }
-
-// Simple fallback UUID generator
-const generateUUID = () => {
-  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-    return v.toString(16);
-  });
-};
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
   userId,
   userName,
   teamId,
+  teamName,
   onSwitchTeam,
   onUpdateName,
   onLogout
@@ -39,8 +31,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   
   // Team Mode State: 'select' (buttons) | 'join' (input)
   const [teamMode, setTeamMode] = useState<'select' | 'join'>('select');
-  const [showCreateConfirm, setShowCreateConfirm] = useState(false);
+  const [showCreateInput, setShowCreateInput] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Name Editing State
   const [isEditingName, setIsEditingName] = useState(false);
@@ -58,7 +51,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
     setTimeout(() => setIsCopied(false), 2000);
   };
 
-  const handleSaveTeam = () => {
+  const handleSaveTeam = async () => {
     if (inputTeamId.trim() && inputTeamId !== teamId) {
       // Basic UUID format check
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -66,32 +59,50 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           error("无效的 Team ID 格式。请输入有效的 UUID。");
           return;
       }
-      onSwitchTeam(inputTeamId.trim());
-      setTeamMode('select');
-      setInputTeamId('');
-      success("已加入团队");
+      
+      setIsProcessing(true);
+      try {
+        await onSwitchTeam(inputTeamId.trim(), "未知团队"); // Assuming ID join doesn't know name immediately
+        setTeamMode('select');
+        setInputTeamId('');
+        success("已加入团队");
+      } catch (e) {
+        // Error is handled by store toast usually, but we stop processing state
+      } finally {
+        setIsProcessing(false);
+      }
     }
   };
 
-  const handleCreateTeam = () => {
-    setShowCreateConfirm(true);
-  };
-
-  const executeCreateTeam = () => {
-    const newTeamId = generateUUID();
-    onSwitchTeam(newTeamId);
-    setShowCreateConfirm(false);
-    success("新团队创建成功");
+  const executeCreateTeam = async (name: string) => {
+    setIsProcessing(true);
+    try {
+      // Pass empty ID to indicate creation of a new team
+      await onSwitchTeam('', name);
+      setShowCreateInput(false);
+      success("新团队创建成功");
+    } catch (e) {
+      // Error handled by store
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleExitTeam = () => {
     setShowExitConfirm(true);
   };
 
-  const executeExitTeam = () => {
-    onSwitchTeam(''); // Clear team ID
-    setShowExitConfirm(false);
-    success("已退出团队");
+  const executeExitTeam = async () => {
+    setIsProcessing(true);
+    try {
+      await onSwitchTeam(''); // Clear team ID
+      setShowExitConfirm(false);
+      success("已退出团队");
+    } catch (e) {
+      // Error handled by store
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
   const handleSaveName = () => {
@@ -106,16 +117,23 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   return (
     <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-8 animate-fade-in bg-slate-50/50 h-full overflow-y-auto">
       
-      <ConfirmModal 
-        isOpen={showCreateConfirm}
-        onClose={() => setShowCreateConfirm(false)}
-        onConfirm={executeCreateTeam}
-        title="创建新团队"
-        description="系统将为您生成一个新的团队 ID 并自动切换到该团队空间。您可以将此 ID 分享给同事以加入协作。"
-        warningText="提示：创建后您将进入一个全新的空白空间。"
-        confirmText="立即创建"
-        variant="primary"
-      />
+      {showCreateInput && (
+        <InputModal 
+          isOpen={true}
+          onClose={() => setShowCreateInput(false)}
+          title={
+            <>
+              <Users size={20} className="text-blue-600" />
+              <span>创建新团队</span>
+            </>
+          }
+          label="团队名称"
+          initialValue=""
+          placeholder="例如：产品研发部"
+          confirmText={isProcessing ? "创建中..." : "立即创建"}
+          onConfirm={executeCreateTeam}
+        />
+      )}
 
       <ConfirmModal 
         isOpen={showExitConfirm}
@@ -124,7 +142,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         title="退出团队"
         description="确定要退出当前团队吗？退出后您将回到个人空间，且无法访问团队共享的数据。"
         warningText="注意：此操作不会删除团队数据，您可以通过 Team ID 重新加入。"
-        confirmText="确认退出"
+        confirmText={isProcessing ? "退出中..." : "确认退出"}
         variant="danger"
       />
 
@@ -167,7 +185,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                  
                  <div className="flex items-center gap-2">
                     <span className="bg-white/20 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-sm flex items-center gap-1.5">
-                       <ShieldCheck size={12} /> Pro 版本
+                       <ShieldCheck size={12} /> {teamName || "个人空间"}
                     </span>
                  </div>
               </div>
@@ -215,10 +233,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                        
                        {teamId ? (
                            <div className="bg-green-50 rounded-xl p-4 border border-green-100 animate-fade-in relative overflow-hidden">
-                              <div className="flex items-center gap-2 mb-2 text-green-800 font-bold">
-                                 <Building size={18} />
-                                 <span>所属团队</span>
-                              </div>
+                              {teamName && (
+                                <div className="flex items-center gap-2 mb-2 text-green-800 font-bold text-lg">
+                                   <Building size={20} />
+                                   <span>{teamName}</span>
+                                </div>
+                              )}
+                              <div className="text-xs text-green-600 mb-1 font-bold uppercase tracking-wider">团队 ID</div>
                               <div className="bg-white/60 p-2 rounded-lg font-mono text-sm text-green-700 border border-green-100/50 break-all mb-4">
                                  {teamId}
                               </div>
@@ -228,8 +249,9 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                 size="sm"
                                 icon={<LogOut size={14} />}
                                 className="w-full justify-center bg-white border border-red-200 text-red-600 hover:bg-red-50 shadow-sm"
+                                disabled={isProcessing}
                               >
-                                退出团队
+                                {isProcessing ? "处理中..." : "退出团队"}
                               </Button>
                            </div>
                        ) : (
@@ -237,7 +259,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                {teamMode === 'select' ? (
                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <button 
-                                        onClick={handleCreateTeam}
+                                        onClick={() => setShowCreateInput(true)}
                                         className="flex flex-col items-center justify-center gap-2 p-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-all group h-32"
                                       >
                                          <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center shadow-sm text-slate-400 group-hover:text-indigo-600 border border-slate-100">
@@ -245,7 +267,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                          </div>
                                          <div className="text-center">
                                             <span className="font-bold text-sm block text-slate-700 group-hover:text-indigo-700">注册新团队</span>
-                                            <span className="text-[10px] text-slate-400 font-normal block mt-1">生成新的唯一 ID</span>
+                                            <span className="text-[10px] text-slate-400 font-normal block mt-1">创建专属空间</span>
                                          </div>
                                       </button>
 
@@ -279,11 +301,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                                             value={inputTeamId}
                                             onChange={(e) => setInputTeamId(e.target.value)}
                                             autoFocus
+                                            disabled={isProcessing}
                                           />
                                           <Button 
                                             onClick={handleSaveTeam}
-                                            disabled={!inputTeamId.trim() || inputTeamId === teamId}
+                                            disabled={!inputTeamId.trim() || inputTeamId === teamId || isProcessing}
                                             size="sm"
+                                            isLoading={isProcessing}
                                           >
                                             绑定
                                           </Button>

@@ -27,6 +27,7 @@ interface MeetingContentProps {
   onDeleteAnalysis: (id: string) => void;
   onBackToTranscript: () => void;
   readOnly?: boolean;
+  searchQuery?: string; // Prop for search highlighting
 }
 
 export const MeetingContent: React.FC<MeetingContentProps> = ({
@@ -47,7 +48,8 @@ export const MeetingContent: React.FC<MeetingContentProps> = ({
   onCancelEdit,
   onDeleteAnalysis,
   onBackToTranscript,
-  readOnly = false
+  readOnly = false,
+  searchQuery = ""
 }) => {
   if (isSelectingTemplate) {
     return (
@@ -71,6 +73,7 @@ export const MeetingContent: React.FC<MeetingContentProps> = ({
         onManageSpeakers={onManageSpeakers}
         uploadDate={meeting.uploadDate}
         readOnly={readOnly}
+        searchQuery={searchQuery}
       />
     );
   }
@@ -84,7 +87,6 @@ export const MeetingContent: React.FC<MeetingContentProps> = ({
         onUpdate={(updates) => onUpdateAnalysis(currentAnalysis.id, updates)}
         isEditing={editingAnalysisId === currentAnalysis.id}
         onStopEditing={onCancelEdit}
-        // 如果是只读，强制不进入编辑模式（虽然父组件已经控制了editingAnalysisId）
       />
     );
   }

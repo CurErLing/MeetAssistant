@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { User, Users, ShieldCheck } from 'lucide-react';
+import { User, ShieldCheck } from 'lucide-react';
 
 interface UserProfileProps {
   name: string;
@@ -14,7 +14,6 @@ interface UserProfileProps {
 export const UserProfile: React.FC<UserProfileProps> = ({ 
   name, 
   role, 
-  teamId,
   onProfileClick
 }) => {
   return (
@@ -32,19 +31,10 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             {name}
             <ShieldCheck size={12} className="text-blue-500" />
           </div>
-          <div className="text-xs text-slate-400 truncate">{role}</div>
+          <div className="text-xs text-blue-600 font-medium truncate bg-blue-50 px-2 py-0.5 rounded-md inline-block mt-1">
+             {role}
+          </div>
         </div>
-      </div>
-
-      {/* Team Indicator */}
-      <div className="px-2 py-1.5 bg-slate-50 border border-slate-100 rounded-lg flex items-center gap-2">
-         <Users size={12} className="text-slate-400" />
-         <div className="flex flex-col min-w-0">
-            <span className="text-[10px] font-medium text-slate-500">当前团队</span>
-            <span className="text-[9px] font-mono text-slate-400 truncate max-w-[140px] leading-tight">
-              {teamId ? teamId : 'Default'}
-            </span>
-         </div>
       </div>
     </div>
   );

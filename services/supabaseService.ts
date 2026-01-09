@@ -1,6 +1,6 @@
 
 import { supabase } from './supabaseClient';
-import { MeetingFile, Folder, VoiceprintProfile, Hotword, Template, TranscriptSegment, Speaker, AnalysisResult } from '../types';
+import { MeetingFile, Folder, VoiceprintProfile, Hotword, Template, UserProfile, Team } from '../types';
 
 // --- Data Mapping Helpers ---
 // Map Supabase snake_case to App camelCase
@@ -101,55 +101,153 @@ export const supabaseService = {
     ].join('-');
   },
 
-  // Get current user ID (returns null if not logged in)
-  async getCurrentUserId() {
+  // --- Auth & User Profile Management ---
+
+  // Get current user ID from local storage
+  getCurrentUserId(): string | null {
     const STORAGE_KEY = 'jimu_app_user_id';
-    let userId = localStorage.getItem(STORAGE_KEY);
-    if (!userId) return null;
-    
-    userId = this._ensureUUID(userId);
-    return userId;
+    return localStorage.getItem(STORAGE_KEY);
   },
 
-  // Login simulation: Generate/Get ID based on credentials
-  async login(identifier: string) {
+  // Login: Generate ID -> Fetch/Create Profile in DB -> Return ID
+  async login(identifier: string): Promise<string> {
     const STORAGE_KEY = 'jimu_app_user_id';
     const userId = await this._generateUUIDFromString(identifier);
+    
+    // 1. Store ID locally
     localStorage.setItem(STORAGE_KEY, userId);
+
+    // 2. Check if user exists in DB 'profiles' table
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (!data) {
+      // 3. If not, create new profile
+      const defaultName = `用户${identifier.slice(-4)}`;
+      const { error: insertError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          name: defaultName,
+          phone: identifier,
+          current_team_id: null
+        });
+      
+      if (insertError) console.error("Error creating profile:", insertError);
+    }
+
     return userId;
   },
 
   async logout() {
-    const STORAGE_KEY = 'jimu_app_user_id';
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem('jimu_app_user_id');
+    // Clear local team cache if any
+    localStorage.removeItem('jimu_app_team_id');
   },
 
-  // Helper to get current TEAM ID (Scope)
-  async getCurrentTeamId() {
-    const STORAGE_KEY = 'jimu_app_team_id';
-    // Don't force generate. If empty, return empty string.
-    return localStorage.getItem(STORAGE_KEY) || '';
+  // Fetch full user profile from DB
+  async fetchUserProfile(): Promise<UserProfile | null> {
+    const userId = this.getCurrentUserId();
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .single();
+
+    if (error || !data) return null;
+
+    return {
+      id: data.id,
+      name: data.name,
+      phone: data.phone,
+      currentTeamId: data.current_team_id
+    };
   },
 
-  // Allow switching teams (UI only for now)
-  async setTeamId(newTeamId: string): Promise<boolean> {
-    if (!newTeamId) {
-        localStorage.removeItem('jimu_app_team_id');
-        return true;
+  async updateUserName(name: string) {
+    const userId = this.getCurrentUserId();
+    if (!userId) return;
+
+    await supabase.from('profiles').update({ name }).eq('id', userId);
+  },
+
+  // --- Team Management ---
+
+  async fetchTeam(teamId: string): Promise<Team | null> {
+    if (!teamId) return null;
+    const { data, error } = await supabase
+      .from('teams')
+      .select('*')
+      .eq('id', teamId)
+      .single();
+    
+    if (error || !data) return null;
+    return {
+      id: data.id,
+      name: data.name,
+      createdBy: data.created_by
+    };
+  },
+
+  async createTeam(name: string): Promise<Team | null> {
+    const userId = this.getCurrentUserId();
+    if (!userId) return null;
+
+    const { data, error } = await supabase
+      .from('teams')
+      .insert({
+        name: name,
+        created_by: userId
+      })
+      .select()
+      .single();
+
+    if (error || !data) {
+        console.error("Create team error", error);
+        return null;
     }
-    if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(newTeamId)) {
-        localStorage.setItem('jimu_app_team_id', newTeamId);
-        return true;
-    } else {
-        throw new Error("无效的 Team ID 格式 (必须是 UUID)");
+
+    return {
+        id: data.id,
+        name: data.name,
+        createdBy: data.created_by
+    };
+  },
+
+  // Update user's current team in DB
+  async joinTeam(teamId: string) {
+    const userId = this.getCurrentUserId();
+    if (!userId) return;
+
+    // Check if team exists first
+    if (teamId) {
+        const { data, error } = await supabase.from('teams').select('id').eq('id', teamId).single();
+        if (error || !data) {
+            throw new Error("团队不存在");
+        }
     }
+
+    // Update profile
+    const { error } = await supabase
+      .from('profiles')
+      .update({ current_team_id: teamId || null })
+      .eq('id', userId);
+      
+    if (error) throw error;
   },
 
   // --- Meetings ---
   async fetchMeetings(): Promise<{ active: MeetingFile[], deleted: MeetingFile[] }> {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return { active: [], deleted: [] };
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return { active: [], deleted: [] };
+
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     // Fetch user's own meetings OR meetings shared in the team
     let query = supabase.from('meetings').select('*');
@@ -186,9 +284,10 @@ export const supabaseService = {
   },
 
   async createMeeting(meeting: MeetingFile, audioBlob: Blob) {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) throw new Error("Not logged in");
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) throw new Error("Not logged in");
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     // Revert storage path to user_id to match data isolation
     const audioPath = `${userId}/${meeting.id}.${meeting.format}`; 
@@ -240,7 +339,7 @@ export const supabaseService = {
   },
 
   async deleteMeetingPermanent(id: string, format: string) {
-    const userId = await this.getCurrentUserId();
+    const userId = this.getCurrentUserId();
     if (!userId) return;
     await supabase.from('meetings').delete().eq('id', id);
     // Revert path to user_id
@@ -249,9 +348,10 @@ export const supabaseService = {
 
   // --- Folders ---
   async fetchFolders(): Promise<Folder[]> {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return [];
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return [];
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     let query = supabase.from('folders').select('*');
     if (teamId) {
@@ -271,9 +371,10 @@ export const supabaseService = {
   },
 
   async createFolder(folder: Folder) {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return;
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return;
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     const { error } = await supabase.from('folders').insert({ 
       id: folder.id, 
@@ -295,9 +396,10 @@ export const supabaseService = {
 
   // --- Voiceprints ---
   async fetchVoiceprints(): Promise<VoiceprintProfile[]> {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return [];
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return [];
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     let query = supabase.from('voiceprints').select('*');
     if (teamId) {
@@ -316,9 +418,10 @@ export const supabaseService = {
   },
 
   async createVoiceprint(vp: VoiceprintProfile, audioBlob?: Blob) {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return;
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return;
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     if (audioBlob) {
        // Revert path to user_id
@@ -335,7 +438,7 @@ export const supabaseService = {
   },
 
   async updateVoiceprint(id: string, name?: string, audioBlob?: Blob) {
-    const userId = await this.getCurrentUserId();
+    const userId = this.getCurrentUserId();
     if (!userId) return;
 
     if (audioBlob) {
@@ -348,7 +451,7 @@ export const supabaseService = {
   },
 
   async deleteVoiceprint(id: string) {
-    const userId = await this.getCurrentUserId();
+    const userId = this.getCurrentUserId();
     if (!userId) return;
 
     await supabase.from('voiceprints').delete().eq('id', id);
@@ -358,8 +461,9 @@ export const supabaseService = {
 
   // --- Templates ---
   async fetchTemplates(): Promise<Template[]> {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
+    const userProfile = await this.fetchUserProfile();
+    const userId = userProfile?.id;
+    const teamId = userProfile?.currentTeamId;
     
     // Fetch system templates (user_id is null) OR user's templates OR team's templates
     let query = supabase.from('templates').select('*');
@@ -384,9 +488,10 @@ export const supabaseService = {
   },
 
   async createTemplate(t: Template) {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return;
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return;
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     const { error } = await supabase.from('templates').insert({
       id: t.id,
@@ -445,9 +550,10 @@ export const supabaseService = {
 
   // --- Hotwords ---
   async fetchHotwords(): Promise<Hotword[]> {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return [];
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return [];
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     let query = supabase.from('hotwords').select('*');
     if (teamId) {
@@ -466,9 +572,10 @@ export const supabaseService = {
   },
 
   async createHotword(h: Hotword) {
-    const userId = await this.getCurrentUserId();
-    const teamId = await this.getCurrentTeamId();
-    if (!userId) return;
+    const userProfile = await this.fetchUserProfile();
+    if (!userProfile) return;
+    const userId = userProfile.id;
+    const teamId = userProfile.currentTeamId;
 
     await supabase.from('hotwords').insert({
       id: h.id,

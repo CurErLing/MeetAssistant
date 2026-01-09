@@ -37,7 +37,7 @@ export const KnowledgeSection: React.FC<KnowledgeSectionProps> = ({
         onClick={() => onToggle(!isOpen)}
       >
         <div className="flex items-center gap-2">
-          <span className="text-base font-medium text-slate-500">知识库</span>
+          <span className="text-base font-medium text-slate-500">更多功能</span>
           {isOpen ? <ChevronDown size={16} className="text-slate-400" /> : <ChevronRight size={16} className="text-slate-400" />}
         </div>
       </div>

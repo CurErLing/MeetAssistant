@@ -63,6 +63,36 @@ export const AudioEditor: React.FC<AudioEditorProps> = ({
     }
   }, [seekTo, seek]);
 
+  // --- Keyboard Shortcuts ---
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore key events if typing in an input or textarea
+      if (['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName)) {
+        return;
+      }
+
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault(); // Prevent page scroll
+          togglePlay();
+          break;
+        case 'ArrowLeft':
+          skip(-5);
+          break;
+        case 'ArrowRight':
+          skip(5);
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [togglePlay, skip]);
+
   // Use the prop duration if available (it might be pre-calculated), otherwise use internal
   const displayDuration = duration > 0 ? duration : loadedDuration;
 

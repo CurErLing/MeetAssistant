@@ -15,7 +15,7 @@ import { AuthView } from './components/views/auth/AuthView';
 import { GlobalModals } from './components/GlobalModals';
 import { MainLayout } from './components/layout/MainLayout';
 import { ToastProvider, useToast } from './components/common/Toast';
-import { ViewState, MeetingFile } from './types';
+import { ViewState, MeetingFile, Folder } from './types';
 
 // Create an inner component to use the useToast hook
 const AppContent = () => {
@@ -92,11 +92,11 @@ const AppContent = () => {
   };
 
   const handleShareFolder = (folderId: string) => {
-    const folder = store.folders.find(f => f.id === folderId);
+    const folder = store.folders.find((f) => f.id === folderId);
     if (folder) {
         const shareLink = `https://jimumeeting.ai/share/folder/${folderId}`;
         navigator.clipboard.writeText(shareLink);
-        toast.success(`分享链接已复制: ${folder.name}`);
+        toast.success(`分享链接已复制: ${(folder as Folder).name}`);
     }
   };
 
@@ -105,7 +105,7 @@ const AppContent = () => {
     const query = store.searchQuery.trim().toLowerCase();
     
     // 1. First Pass: Create a shallow copy with match snippets if needed
-    const processedMeetings = store.meetings.map(m => {
+    const processedMeetings = store.meetings.map((m: MeetingFile) => {
       // If no query, return original (no snippet)
       if (!query) return { ...m, matchSnippet: undefined };
 
@@ -234,6 +234,7 @@ const AppContent = () => {
         currentView={store.view} 
         onChangeView={(view) => {
           setTargetTemplateId(null);
+          store.setSearchQuery(""); // Reset search when changing main view
           store.setView(view);
         }}
         isHardwareConnecting={hardwareConnectionState === 'searching' || hardwareConnectionState === 'syncing'} 
@@ -247,6 +248,7 @@ const AppContent = () => {
         }}
         selectedFolderId={store.selectedFolderId}
         onSelectFolder={(id) => {
+          store.setSearchQuery(""); // Reset search when selecting sidebar folder
           store.setSelectedFolderId(id);
           setNavSource('sidebar');
         }}
@@ -260,8 +262,10 @@ const AppContent = () => {
         }}
         onShareFolder={handleShareFolder}
         teamId={store.teamId}
+        teamName={store.teamName} // Pass teamName
         onSwitchTeam={store.joinTeam}
         onProfileClick={() => {
+          store.setSearchQuery(""); // Reset search when going to profile
           store.setView('profile');
           store.setSelectedFolderId(null);
         }}
@@ -278,17 +282,20 @@ const AppContent = () => {
                 store.accessMeeting(id);
               }}
               onSelectFolder={(id) => { 
+                store.setSearchQuery(""); // Reset search
                 store.setSelectedFolderId(id); 
                 store.setView('list'); 
                 setNavSource('home');
               }}
               onSelectTemplate={setHomeSelectedTemplateId} 
               onViewMoreMeetings={() => { 
+                store.setSearchQuery(""); // Reset search
                 store.setSelectedFolderId(null); 
                 store.setView('list'); 
                 setNavSource('home');
               }}
               onViewMoreTemplates={() => {
+                store.setSearchQuery(""); // Reset search
                 setTargetTemplateId(null);
                 store.setView('templates');
               }}
@@ -359,6 +366,7 @@ const AppContent = () => {
               }}
               onClearFolder={() => store.setSelectedFolderId(null)}
               onBack={() => {
+                  store.setSearchQuery(""); // Reset search on back
                   store.setSelectedFolderId(null);
                   store.setView('home');
               }}
@@ -483,6 +491,7 @@ const AppContent = () => {
               userId={store.userId || ''}
               userName={store.userName}
               teamId={store.teamId}
+              teamName={store.teamName} // Pass teamName
               onSwitchTeam={store.joinTeam}
               onUpdateName={(name) => {
                  store.updateUserName(name);

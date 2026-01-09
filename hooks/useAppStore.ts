@@ -23,6 +23,7 @@ export const useAppStore = () => {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [shareConfig, setShareConfig] = useState<ShareConfig | null>(null);
   const [teamId, setTeamId] = useState<string>("");
+  const [teamName, setTeamName] = useState<string>(""); // New team name state
   const [userId, setUserId] = useState<string | null>(null); // userId can be null if not logged in
   const [userName, setUserName] = useState<string>(""); // 用户昵称
 
@@ -39,10 +40,25 @@ export const useAppStore = () => {
   const fetchAllData = async () => {
     setIsLoading(true);
     try {
-      const currentTeamId = await supabaseService.getCurrentTeamId();
-      setTeamId(currentTeamId);
+      // 1. Fetch User Profile from DB (Source of Truth)
+      const userProfile = await supabaseService.fetchUserProfile();
+      
+      if (userProfile) {
+          setUserName(userProfile.name);
+          setUserId(userProfile.id);
+          
+          if (userProfile.currentTeamId) {
+              setTeamId(userProfile.currentTeamId);
+              // Fetch Team Details
+              const teamData = await supabaseService.fetchTeam(userProfile.currentTeamId);
+              setTeamName(teamData ? teamData.name : "未知团队");
+          } else {
+              setTeamId("");
+              setTeamName("");
+          }
+      }
 
-      // 并行加载所有数据
+      // 2. Parallel fetch other data (now context aware inside service)
       const [
         fetchedMeetings,
         fetchedFolders,
@@ -89,15 +105,7 @@ export const useAppStore = () => {
   // --- 初始化：检查登录状态并加载数据 ---
   useEffect(() => {
     const init = async () => {
-      // Initialize UserName
-      let storedName = localStorage.getItem('jimu_app_username');
-      if (!storedName) {
-        storedName = `积木用户${Math.floor(1000 + Math.random() * 9000)}`;
-        localStorage.setItem('jimu_app_username', storedName);
-      }
-      setUserName(storedName);
-
-      const storedUserId = await supabaseService.getCurrentUserId();
+      const storedUserId = supabaseService.getCurrentUserId();
       if (storedUserId) {
         setUserId(storedUserId);
         await fetchAllData();
@@ -115,10 +123,15 @@ export const useAppStore = () => {
 
   const login = async (identifier: string) => {
     setIsLoading(true);
-    const newUserId = await supabaseService.login(identifier);
-    setUserId(newUserId);
-    await fetchAllData();
-    setView('home'); // Reset view to home after login
+    try {
+        const newUserId = await supabaseService.login(identifier);
+        setUserId(newUserId);
+        await fetchAllData();
+        setView('home'); 
+    } catch (e) {
+        console.error("Login failed", e);
+        setIsLoading(false);
+    }
   };
 
   const logout = async () => {
@@ -131,20 +144,31 @@ export const useAppStore = () => {
     setView('home');
   };
 
-  const updateUserName = (name: string) => {
+  const updateUserName = async (name: string) => {
     setUserName(name);
-    localStorage.setItem('jimu_app_username', name);
+    await supabaseService.updateUserName(name);
   };
 
-  const joinTeam = async (newTeamId: string) => {
-    const success = await supabaseService.setTeamId(newTeamId);
-    if (success) {
-      setTeamId(newTeamId);
-      // Clear data to avoid mixing before new fetch completes
-      setMeetings([]);
-      setFolders([]);
-      // Fetch new team data
-      await fetchAllData();
+  const joinTeam = async (newTeamId: string, newTeamName?: string) => {
+    try {
+        if (newTeamName && !newTeamId) {
+            // Case: Creating a new team
+            // Note: newTeamId is generated inside createTeam if not passed differently
+            // We need to implement proper creation in service
+            const newTeam = await supabaseService.createTeam(newTeamName);
+            if (newTeam) {
+                await supabaseService.joinTeam(newTeam.id);
+            }
+        } else {
+            // Case: Joining existing team by ID or Leaving (empty ID)
+            await supabaseService.joinTeam(newTeamId);
+        }
+        
+        // Refresh everything to reflect team view
+        await fetchAllData();
+    } catch (error) {
+        console.error("Join/Create team failed", error);
+        throw error; // Re-throw to be caught by UI toast
     }
   };
 
@@ -525,6 +549,7 @@ export const useAppStore = () => {
     templates,
     isLoading,
     teamId, // Export Team ID
+    teamName, // Export Team Name
     userId, // Export User ID
     userName, // Export User Name
     

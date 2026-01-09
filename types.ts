@@ -21,6 +21,25 @@ export interface Speaker {
 }
 
 /**
+ * 用户个人资料 (对应数据库 profiles 表)
+ */
+export interface UserProfile {
+  id: string;
+  name: string;
+  phone?: string;
+  currentTeamId?: string;
+}
+
+/**
+ * 团队信息 (对应数据库 teams 表)
+ */
+export interface Team {
+  id: string;
+  name: string;
+  createdBy: string;
+}
+
+/**
  * 转写片段结构
  * 代表音频中的一句话或一个时间段的文本
  */

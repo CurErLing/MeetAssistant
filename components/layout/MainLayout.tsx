@@ -20,6 +20,7 @@ interface MainLayoutProps {
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
   teamId?: string;
+  teamName?: string;
   onSwitchTeam?: (id: string) => void;
   onProfileClick?: () => void;
   userName: string;
@@ -41,6 +42,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   onDeleteFolder,
   onShareFolder,
   teamId,
+  teamName,
   onSwitchTeam,
   onProfileClick,
   userName
@@ -65,6 +67,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         onDeleteFolder={onDeleteFolder}
         onShareFolder={onShareFolder}
         teamId={teamId}
+        teamName={teamName}
         onSwitchTeam={onSwitchTeam}
         onProfileClick={onProfileClick}
         userName={userName}

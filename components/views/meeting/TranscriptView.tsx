@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FileText } from 'lucide-react';
+import { FileText, Search } from 'lucide-react';
 import { TranscriptSegment, Speaker, SpeakerStatus } from '../../../types';
 import { TranscriptItem } from './TranscriptItem';
 import { TranscriptToolbar } from './transcript/TranscriptToolbar';
@@ -15,7 +15,8 @@ export const TranscriptView = ({
   onSeek,
   onManageSpeakers,
   uploadDate,
-  readOnly = false
+  readOnly = false,
+  searchQuery = "" // Receive search query
 }: {
   transcript: TranscriptSegment[];
   speakers: Record<string, Speaker>;
@@ -26,36 +27,56 @@ export const TranscriptView = ({
   onManageSpeakers: () => void;
   uploadDate: Date;
   readOnly?: boolean;
+  searchQuery?: string;
 }) => {
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
   const [segmentTextInput, setSegmentTextInput] = useState("");
   const { success } = useToast();
   
-  // 使用 Ref 存储最新的输入值
   const textInputRef = useRef("");
   const containerRef = useRef<HTMLDivElement>(null);
+  // Track if we have already scrolled to the initial search match
+  const hasScrolledToSearchRef = useRef(false);
 
-  // --- 自动滚动逻辑 ---
+  // --- Reset search scroll tracking when query changes ---
+  useEffect(() => {
+    hasScrolledToSearchRef.current = false;
+  }, [searchQuery]);
+
+  // --- Auto-Scroll Logic (Search & Playback) ---
   useEffect(() => {
     if (containerRef.current && !editingSegmentId) {
+      const container = containerRef.current;
+
+      // 1. Priority: Scroll to Search Result (First time only)
+      if (searchQuery && !hasScrolledToSearchRef.current) {
+        // Find the first element with the data attribute
+        const matchEl = container.querySelector('[data-has-match="true"]') as HTMLElement;
+        if (matchEl) {
+           const offset = matchEl.offsetTop - container.offsetTop - 20; // 20px padding top
+           container.scrollTo({ top: offset, behavior: 'smooth' });
+           hasScrolledToSearchRef.current = true;
+           return; // Skip playback scroll if we just jumped to search
+        }
+      }
+
+      // 2. Playback Sync Scroll
       const activeSegment = transcript?.find(
         seg => currentTime >= seg.startTime && currentTime <= seg.endTime
       );
       if (activeSegment) {
         const element = document.getElementById(`segment-${activeSegment.id}`);
         if (element) {
-          const container = containerRef.current;
           const offset = element.offsetTop - container.offsetTop - (container.clientHeight / 2) + (element.clientHeight / 2);
-          
-          if (Math.abs(container.scrollTop - offset) > 50) {
+          // Only scroll if deviation is significant to avoid jitter
+          if (Math.abs(container.scrollTop - offset) > 80) {
              container.scrollTo({ top: offset, behavior: 'smooth' });
           }
         }
       }
     }
-  }, [currentTime, transcript, editingSegmentId]);
+  }, [currentTime, transcript, editingSegmentId, searchQuery]);
 
-  // 稳定的回调函数
   const startEditingSegment = useCallback((seg: TranscriptSegment) => {
     if (readOnly) return;
     setEditingSegmentId(seg.id);
@@ -74,10 +95,8 @@ export const TranscriptView = ({
 
   const saveSegmentText = useCallback(() => {
     if (!editingSegmentId || !transcript) return;
-    
     const newText = textInputRef.current;
     const updatedTranscript = transcript.map(seg => seg.id === editingSegmentId ? { ...seg, text: newText } : seg);
-    
     onUpdateTranscript(updatedTranscript);
     setEditingSegmentId(null);
   }, [editingSegmentId, transcript, onUpdateTranscript]);
@@ -89,7 +108,7 @@ export const TranscriptView = ({
 
   return (
     <div className="flex-1 flex flex-col h-full bg-white relative">
-      {/* 顶部工具栏 (组件化) */}
+      {/* 顶部工具栏 */}
       {!readOnly && (
         <TranscriptToolbar 
           uploadDate={uploadDate}
@@ -97,9 +116,17 @@ export const TranscriptView = ({
         />
       )}
       
+      {/* Search Result Indicator */}
+      {searchQuery && (
+         <div className="absolute top-0 left-0 right-0 z-10 bg-yellow-50 border-b border-yellow-100 px-4 py-2 flex items-center justify-center text-xs text-yellow-800 font-medium shadow-sm">
+            <Search size={12} className="mr-2" />
+            正在搜索关键词："{searchQuery}"
+         </div>
+      )}
+      
       {/* 列表容器 */}
       <div 
-        className="flex-1 overflow-y-auto px-4 sm:px-10 py-4 sm:py-6 space-y-2 scroll-smooth" 
+        className={`flex-1 overflow-y-auto px-4 sm:px-10 py-4 sm:py-6 space-y-2 scroll-smooth ${searchQuery ? 'pt-10' : ''}`} 
         ref={containerRef}
       >
          {transcript?.map((segment) => {
@@ -118,6 +145,7 @@ export const TranscriptView = ({
                 isActive={currentTime >= segment.startTime && currentTime <= segment.endTime}
                 isEditing={isEditing}
                 inputValue={isEditing ? segmentTextInput : ""}
+                searchQuery={searchQuery} // Pass down search query
                 onSpeakerClick={onSpeakerClick}
                 onSeek={onSeek}
                 onEditClick={startEditingSegment}

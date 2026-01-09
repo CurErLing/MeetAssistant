@@ -25,6 +25,7 @@ interface SidebarProps {
   onDeleteFolder: (id: string) => void;
   onShareFolder: (id: string) => void;
   teamId?: string;
+  teamName?: string;
   onSwitchTeam?: (id: string) => void;
   onProfileClick?: () => void;
   userName: string;
@@ -33,7 +34,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView, onChangeView, isHardwareConnecting, onConnectHardware,
   meetingsCount, deletedCount, folders, onAddFolder, selectedFolderId, onSelectFolder,
-  onRenameFolder, onDeleteFolder, onShareFolder, teamId, onSwitchTeam, onProfileClick,
+  onRenameFolder, onDeleteFolder, onShareFolder, teamId, teamName, onSwitchTeam, onProfileClick,
   userName
 }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -119,6 +120,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onConnectHardware={onConnectHardware}
           onCloseMobileMenu={() => setIsMobileMenuOpen(false)}
           teamId={teamId}
+          teamName={teamName}
           onSwitchTeam={onSwitchTeam}
           onProfileClick={onProfileClick}
           userName={userName}

@@ -9,6 +9,7 @@ import { MeetingContent } from './MeetingContent';
 import { MeetingModals } from './MeetingModals';
 import { useMeetingDetailLogic } from '../../../hooks/useMeetingDetailLogic';
 import { useToast } from '../../common/Toast';
+import { useAppStore } from '../../../hooks/useAppStore';
 
 /**
  * 会议详情页主组件
@@ -36,6 +37,8 @@ export const MeetingDetailView = ({
   onPreviewShare: (config: ShareConfig) => void
 }) => {
   const { info } = useToast();
+  // Get search query from store to pass down for highlighting
+  const { searchQuery } = useAppStore();
   
   // 使用自定义 Hook 提取业务逻辑，保持视图层整洁
   const { state, setters, actions } = useMeetingDetailLogic({
@@ -182,6 +185,7 @@ export const MeetingDetailView = ({
               onDeleteAnalysis={actions.deleteAnalysis}
               onBackToTranscript={() => setters.setActiveTab('transcript')}
               readOnly={isReadOnly}
+              searchQuery={searchQuery} // Pass the global search query
            />
         </div>
       </div>
