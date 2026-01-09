@@ -6,12 +6,14 @@ import { Button } from '../../common/Button';
 import { HardwareFile } from '../../../hooks/useHardwareSync';
 import { DeviceStatusCard } from './DeviceStatusCard';
 import { DeviceFileList } from './DeviceFileList';
+import { formatTime } from '../../../utils/formatUtils';
 
 interface HardwareSyncModalProps {
   connectionState: 'idle' | 'searching' | 'connected' | 'syncing' | 'disconnected';
   files: HardwareFile[];
   deviceStatus?: { battery: number; version: string; capacity?: { used: number; total: number } | null };
   transferProgress?: number;
+  transferTime?: number;
   onToggleFile: (id: string) => void;
   onSync: () => void;
   onClose: () => void;
@@ -22,6 +24,7 @@ export const HardwareSyncModal: React.FC<HardwareSyncModalProps> = ({
   files,
   deviceStatus = { battery: 0, version: '', capacity: null },
   transferProgress = 0,
+  transferTime = 0,
   onToggleFile,
   onSync,
   onClose
@@ -98,7 +101,8 @@ export const HardwareSyncModal: React.FC<HardwareSyncModalProps> = ({
               </div>
               <div className="text-center">
                  <h3 className="text-xl font-bold text-slate-900 mb-2">正在传输录音...</h3>
-                 <p className="text-sm text-slate-500">请保持设备连接，不要关闭窗口</p>
+                 <p className="text-sm text-slate-500 mb-1">请保持设备连接，不要关闭窗口</p>
+                 <p className="text-xs text-slate-400 font-mono">已耗时: {formatTime(transferTime)}</p>
               </div>
            </div>
         )}

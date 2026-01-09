@@ -66,8 +66,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         setTeamMode('select');
         setInputTeamId('');
         success("已加入团队");
-      } catch (e) {
-        // Error is handled by store toast usually, but we stop processing state
+      } catch (e: any) {
+        error(e.message || "加入团队失败，请检查 ID 是否正确");
       } finally {
         setIsProcessing(false);
       }
@@ -81,8 +81,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       await onSwitchTeam('', name);
       setShowCreateInput(false);
       success("新团队创建成功");
-    } catch (e) {
-      // Error handled by store
+    } catch (e: any) {
+      error(e.message || "创建团队失败");
     } finally {
       setIsProcessing(false);
     }
@@ -98,8 +98,8 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       await onSwitchTeam(''); // Clear team ID
       setShowExitConfirm(false);
       success("已退出团队");
-    } catch (e) {
-      // Error handled by store
+    } catch (e: any) {
+      error(e.message || "退出团队失败");
     } finally {
       setIsProcessing(false);
     }

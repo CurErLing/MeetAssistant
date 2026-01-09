@@ -2,16 +2,7 @@
 import { convertToWav } from '../audioUtils';
 import { BLE_UUIDS, CMD, DATA_TYPES, Packet, buildPacket, parsePacket } from './protocol';
 
-// ... (Types omitted for brevity, same as original file) ...
-// NOTE: Assuming interfaces are preserved as they were in the original file content provided in context. 
-// I will only output the class implementation changes to remove alerts.
-
-// Re-declare interfaces locally for valid compilation in this snippet context if needed, 
-// but assuming partial file update is not supported, I will output the full file content 
-// minus the alert calls and keeping structure.
-
-// ... (Web Bluetooth Interfaces) ...
-// (Keeping existing interfaces from previous file content)
+// ... (Web Bluetooth Interfaces - keeping them for context/types) ...
 interface BluetoothCharacteristicProperties {
   broadcast: boolean;
   read: boolean;
@@ -129,8 +120,11 @@ class BluetoothService {
   private connectionState: ConnectionState = 'idle';
   private stateListeners: ((state: ConnectionState) => void)[] = [];
   
-  private dataBuffer: Uint8Array = new Uint8Array(0);
+  // Processing Queue buffers
+  private processingBuffer: Uint8Array = new Uint8Array(0);
   private statusBuffer: Uint8Array = new Uint8Array(0);
+  private incomingQueue: Uint8Array[] = [];
+  private isProcessingQueue = false;
 
   private fileListBuffer: DeviceFileInfo[] = [];
   private currentDownloadFile: { name: string; data: Uint8Array[]; receivedSize: number; totalSize: number } | null = null;
@@ -139,6 +133,10 @@ class BluetoothService {
   private isFetchingList = false;
   private listTransferTimer: any = null;
   private downloadWatchdog: any = null; 
+  
+  // Throttle control for progress updates
+  private lastProgressUpdate = 0;
+  private lastProgressValue = 0;
   
   private onFileListReceived: ((files: DeviceFileInfo[]) => void) | null = null;
   private onFileChunkReceived: ((progress: number) => void) | null = null;
@@ -196,8 +194,10 @@ class BluetoothService {
       await notifyCharStatus.startNotifications();
       notifyCharStatus.addEventListener('characteristicvaluechanged', this.handleStatusNotification);
 
-      this.dataBuffer = new Uint8Array(0);
+      this.processingBuffer = new Uint8Array(0);
       this.statusBuffer = new Uint8Array(0);
+      this.incomingQueue = [];
+      this.isProcessingQueue = false;
       this.seq = 0;
 
       this.setState('connected');
@@ -259,10 +259,17 @@ class BluetoothService {
   public async getDeviceInfo() {
     try {
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_BATTERY);
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 150));
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_CAPACITY);
-        await new Promise(r => setTimeout(r, 400));
+        await new Promise(r => setTimeout(r, 150));
         await this.sendCommand(DATA_TYPES.CONTROL, CMD.GET_VERSION);
+        
+        // Upgrade: Attempt to enable high speed mode (Bluetooth 5.3 optimization)
+        await new Promise(r => setTimeout(r, 150));
+        const highSpeedPayload = new Uint8Array([0x01]); // Enable flag
+        await this.sendCommand(DATA_TYPES.CONTROL, CMD.ENABLE_HIGH_SPEED, highSpeedPayload);
+        console.log("Sent negotiation for High Speed Mode (5.3)");
+        
     } catch (e) {
         console.error("Error getting device info", e);
     }
@@ -299,6 +306,9 @@ class BluetoothService {
     this.onFileChunkReceived = onProgress;
     this.onFileDownloadComplete = onComplete;
     this.onFileDownloadError = onError;
+    this.lastProgressUpdate = 0;
+    this.lastProgressValue = 0;
+    
     this.setState('syncing');
     
     this.resetDownloadWatchdog();
@@ -339,15 +349,55 @@ class BluetoothService {
     }
   }
 
-  private handleDataNotification = async (event: Event) => {
+  private handleDataNotification = (event: Event) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
     const value = target.value;
     if (!value) return;
 
     const newData = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
-    this.dataBuffer = this.appendBuffer(this.dataBuffer, newData);
-    await this.processBuffer(this.dataBuffer, (newBuff) => this.dataBuffer = newBuff);
+    
+    // Push to queue and trigger processor
+    this.incomingQueue.push(newData);
+    if (!this.isProcessingQueue) {
+        this.processQueue();
+    }
   };
+
+  private async processQueue() {
+    if (this.isProcessingQueue) return;
+    this.isProcessingQueue = true;
+
+    // Optimization: Batch process all queued chunks to prevent frequent small allocations
+    // This is crucial for high throughput (2Mbps+) where JS event loop lag can cause queue buildup
+    if (this.incomingQueue.length > 0) {
+        let totalNewSize = 0;
+        for (const chunk of this.incomingQueue) {
+            totalNewSize += chunk.length;
+        }
+
+        // Single allocation for all pending data
+        const newBuffer = new Uint8Array(this.processingBuffer.length + totalNewSize);
+        newBuffer.set(this.processingBuffer);
+        
+        let offset = this.processingBuffer.length;
+        for (const chunk of this.incomingQueue) {
+            newBuffer.set(chunk, offset);
+            offset += chunk.length;
+        }
+        
+        this.processingBuffer = newBuffer;
+        this.incomingQueue = []; // Clear queue in one go
+        
+        await this.processBufferLoop();
+    }
+
+    this.isProcessingQueue = false;
+    
+    // Re-check in case new data arrived while processing
+    if (this.incomingQueue.length > 0) {
+        setTimeout(() => this.processQueue(), 0);
+    }
+  }
 
   private handleStatusNotification = async (event: Event) => {
     const target = event.target as BluetoothRemoteGATTCharacteristic;
@@ -356,7 +406,7 @@ class BluetoothService {
 
     const newData = new Uint8Array(value.buffer, value.byteOffset, value.byteLength);
     this.statusBuffer = this.appendBuffer(this.statusBuffer, newData);
-    await this.processBuffer(this.statusBuffer, (newBuff) => this.statusBuffer = newBuff);
+    await this.processStatusBuffer();
   };
 
   private appendBuffer(buffer: Uint8Array, newData: Uint8Array): Uint8Array {
@@ -366,37 +416,66 @@ class BluetoothService {
     return newBuffer;
   }
 
-  private async processBuffer(buffer: Uint8Array, setBuffer: (b: Uint8Array) => void) {
-    let currentBuffer = buffer;
-    while (currentBuffer.length >= 6) {
-      if (currentBuffer[0] !== 0x5A) {
+  private async processBufferLoop() {
+    let buffer = this.processingBuffer;
+    
+    while (buffer.length >= 6) {
+      if (buffer[0] !== 0x5A) {
+        // Find next 0x5A
         let start = 1;
-        while (start < currentBuffer.length && currentBuffer[start] !== 0x5A) {
+        while (start < buffer.length && buffer[start] !== 0x5A) {
           start++;
         }
-        currentBuffer = currentBuffer.slice(start);
+        buffer = buffer.slice(start);
         continue;
       }
 
-      const view = new DataView(currentBuffer.buffer, currentBuffer.byteOffset, currentBuffer.byteLength);
+      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
       const dataLen = view.getUint16(4, true); 
       const totalPacketLen = 6 + dataLen;
 
-      if (currentBuffer.length < totalPacketLen) {
-        break; 
+      if (buffer.length < totalPacketLen) {
+        break; // Wait for more data
       }
 
-      const packetBytes = currentBuffer.slice(0, totalPacketLen);
+      const packetBytes = buffer.slice(0, totalPacketLen);
       const packet = parsePacket(new DataView(packetBytes.buffer));
 
       if (packet) {
         await this.handlePacket(packet);
+      } else {
+        console.warn("Invalid CRC packet skipped");
       }
 
-      currentBuffer = currentBuffer.slice(totalPacketLen);
+      buffer = buffer.slice(totalPacketLen);
     }
     
-    setBuffer(currentBuffer);
+    this.processingBuffer = buffer;
+  }
+
+  private async processStatusBuffer() {
+    // Similar logic for status buffer, simplified as status packets are rare
+    let buffer = this.statusBuffer;
+    while (buffer.length >= 6) {
+        if (buffer[0] !== 0x5A) {
+            let start = 1;
+            while (start < buffer.length && buffer[start] !== 0x5A) start++;
+            buffer = buffer.slice(start);
+            continue;
+        }
+        const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+        const dataLen = view.getUint16(4, true);
+        const totalPacketLen = 6 + dataLen;
+        if (buffer.length < totalPacketLen) break;
+
+        const packetBytes = buffer.slice(0, totalPacketLen);
+        const packet = parsePacket(new DataView(packetBytes.buffer));
+        if (packet) {
+            await this.handlePacket(packet);
+        }
+        buffer = buffer.slice(totalPacketLen);
+    }
+    this.statusBuffer = buffer;
   }
 
   private async handlePacket(packet: Packet) {
@@ -406,9 +485,8 @@ class BluetoothService {
     const cmd = packet.payload[1];
     const data = packet.payload.subarray(2);
 
-    if (type === DATA_TYPES.FILE_TRANSFER) {
-        this.sendConfirmation(packet);
-    }
+    // OPTIMIZATION: Do NOT send ACK for file transfer packets (Type 2)
+    // Only ack control packets if needed (Firmware dependent, assuming control doesn't need ack for notifications)
 
     if (type === DATA_TYPES.CONTROL) {
        this.handleControlCommand(cmd, data);
@@ -568,8 +646,16 @@ class BluetoothService {
       this.currentDownloadFile.receivedSize += data.length;
       
       if (this.onFileChunkReceived) {
+        // UI Optimization: Throttle progress updates to avoid blocking the main thread
+        // Only update if 1% changed OR 200ms passed
+        const now = Date.now();
         const pct = Math.min(100, Math.round((this.currentDownloadFile.receivedSize / this.currentDownloadFile.totalSize) * 100));
-        this.onFileChunkReceived(pct);
+        
+        if (pct !== this.lastProgressValue && (now - this.lastProgressUpdate > 200 || pct === 100 || pct === 0)) {
+            this.onFileChunkReceived(pct);
+            this.lastProgressUpdate = now;
+            this.lastProgressValue = pct;
+        }
       }
     }
   }

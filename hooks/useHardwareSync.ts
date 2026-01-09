@@ -1,5 +1,5 @@
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { bluetoothService } from '../services/ble/BluetoothService';
 import { formatTime } from '../utils/formatUtils';
 import { useToast } from '../components/common/Toast';
@@ -32,6 +32,8 @@ export const useHardwareSync = (
   }>({ battery: 0, version: '', capacity: null });
   
   const [transferProgress, setTransferProgress] = useState(0);
+  const [transferTime, setTransferTime] = useState(0);
+  const timerRef = useRef<number | null>(null);
   
   // Listen to service state
   useEffect(() => {
@@ -40,12 +42,29 @@ export const useHardwareSync = (
       if (state === 'disconnected' && isModalOpen) {
         error("设备已断开连接");
         setIsModalOpen(false);
+        stopTimer();
       }
     });
   }, [isModalOpen, error]);
 
+  const startTimer = () => {
+    setTransferTime(0);
+    if (timerRef.current) clearInterval(timerRef.current);
+    timerRef.current = window.setInterval(() => {
+      setTransferTime(t => t + 1);
+    }, 1000);
+  };
+
+  const stopTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   const openSyncModal = useCallback(async () => {
     setIsModalOpen(true);
+    setTransferTime(0);
     try {
         await bluetoothService.connect();
     } catch (e: any) {
@@ -87,10 +106,12 @@ export const useHardwareSync = (
   }, [error]);
 
   const closeSyncModal = useCallback(() => {
+    stopTimer();
     bluetoothService.disconnect();
     setIsModalOpen(false);
     setConnectionState('idle');
     setDeviceFiles([]);
+    setTransferTime(0);
   }, []);
 
   const toggleFileSelection = useCallback((id: string) => {
@@ -102,6 +123,7 @@ export const useHardwareSync = (
     if (filesToSync.length === 0) return;
 
     const isBatch = filesToSync.length > 1;
+    startTimer();
 
     for (const fileData of filesToSync) {
       setTransferProgress(0);
@@ -128,6 +150,7 @@ export const useHardwareSync = (
       }
     }
 
+    stopTimer();
     setTransferProgress(100);
     setTimeout(() => {
       onSyncComplete();
@@ -142,6 +165,7 @@ export const useHardwareSync = (
     deviceFiles,
     deviceStatus,
     transferProgress,
+    transferTime,
     openSyncModal,
     closeSyncModal,
     toggleFileSelection,

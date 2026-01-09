@@ -24,7 +24,8 @@ interface GlobalModalsProps {
     version: string;
     capacity?: { used: number; total: number } | null;
   }; 
-  transferProgress?: number; 
+  transferProgress?: number;
+  transferTime?: number; 
   onToggleHardwareFile: (id: string) => void;
   onSyncHardware: () => void;
   onCloseHardwareModal: () => void;
@@ -39,7 +40,7 @@ interface GlobalModalsProps {
 export const GlobalModals: React.FC<GlobalModalsProps> = ({
   pendingFile, onConfirmUpload, onCancelUpload,
   isWebRecorderOpen, onSaveRecording, onCloseWebRecorder,
-  isHardwareModalOpen, hardwareConnectionState, deviceFiles, deviceStatus, transferProgress, onToggleHardwareFile, onSyncHardware, onCloseHardwareModal,
+  isHardwareModalOpen, hardwareConnectionState, deviceFiles, deviceStatus, transferProgress, transferTime, onToggleHardwareFile, onSyncHardware, onCloseHardwareModal,
   activeHomeTemplate, templateCategories, onSaveTemplate, onDeleteTemplate, onCloseTemplateModal
 }) => {
   return (
@@ -51,6 +52,7 @@ export const GlobalModals: React.FC<GlobalModalsProps> = ({
           files={deviceFiles}
           deviceStatus={deviceStatus}
           transferProgress={transferProgress}
+          transferTime={transferTime}
           onToggleFile={onToggleHardwareFile}
           onSync={onSyncHardware}
           onClose={onCloseHardwareModal}

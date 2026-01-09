@@ -14,6 +14,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
   const [code, setCode] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [countdown, setCountdown] = useState(0);
+  const [errorMessage, setErrorMessage] = useState('');
 
   // Timer effect
   useEffect(() => {
@@ -32,21 +33,42 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
     setPassword('');
     setCode('');
     setCountdown(0);
+    setErrorMessage('');
+  };
+
+  const validatePhone = (phone: string) => {
+    const phoneRegex = /^1[3-9]\d{9}$/;
+    return phoneRegex.test(phone);
   };
 
   const handleGetCode = () => {
     if (!identifier.trim()) {
-      // Allow a simple check or show UI feedback
+      setErrorMessage('请输入手机号码');
       return;
     }
+    
+    if (method === 'phone' && !validatePhone(identifier)) {
+      setErrorMessage('请输入正确的11位手机号码');
+      return;
+    }
+
     setCountdown(60);
     // Auto-fill for demo purposes
     setCode('123456'); 
+    setErrorMessage('');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!identifier.trim()) return;
+    if (!identifier.trim()) {
+       setErrorMessage(`请输入${method === 'phone' ? '手机号' : '邮箱'}`);
+       return;
+    }
+
+    if (method === 'phone' && !validatePhone(identifier)) {
+       setErrorMessage('手机号码格式不正确');
+       return;
+    }
     
     // Basic mock validation
     if (method === 'phone' && !code) {
@@ -106,14 +128,18 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                        <div className="relative">
                           <input 
                             type="tel"
-                            className="w-full pl-4 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
+                            className={`w-full pl-4 pr-4 py-3 bg-slate-50 border rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all font-medium text-slate-900 ${errorMessage ? 'border-red-300 bg-red-50' : 'border-slate-200'}`}
                             placeholder="请输入手机号"
                             value={identifier}
-                            onChange={(e) => setIdentifier(e.target.value)}
+                            onChange={(e) => {
+                                setIdentifier(e.target.value);
+                                setErrorMessage('');
+                            }}
                             autoFocus
-                            required
+                            maxLength={11}
                           />
                        </div>
+                       {errorMessage && <p className="text-xs text-red-500 mt-1.5 ml-1 animate-fade-in">{errorMessage}</p>}
                     </div>
                     <div>
                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2 ml-1">验证码</label>
@@ -124,7 +150,7 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             placeholder="123456"
                             value={code}
                             onChange={(e) => setCode(e.target.value)}
-                            required
+                            maxLength={6}
                           />
                           <button 
                             type="button" 
@@ -147,7 +173,10 @@ export const AuthView: React.FC<AuthViewProps> = ({ onLogin }) => {
                             className="w-full pl-4 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-100 focus:border-blue-500 outline-none transition-all font-medium text-slate-900"
                             placeholder="name@example.com"
                             value={identifier}
-                            onChange={(e) => setIdentifier(e.target.value)}
+                            onChange={(e) => {
+                                setIdentifier(e.target.value);
+                                setErrorMessage('');
+                            }}
                             autoFocus
                             required
                           />

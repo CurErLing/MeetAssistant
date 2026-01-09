@@ -15,7 +15,7 @@ import { AuthView } from './components/views/auth/AuthView';
 import { GlobalModals } from './components/GlobalModals';
 import { MainLayout } from './components/layout/MainLayout';
 import { ToastProvider, useToast } from './components/common/Toast';
-import { ViewState, MeetingFile, Folder } from './types';
+import { ViewState, MeetingFile, Folder, Speaker } from './types';
 
 // Create an inner component to use the useToast hook
 const AppContent = () => {
@@ -42,6 +42,7 @@ const AppContent = () => {
     deviceFiles,
     deviceStatus,
     transferProgress,
+    transferTime,
     openSyncModal,
     closeSyncModal,
     toggleFileSelection,
@@ -149,7 +150,7 @@ const AppContent = () => {
       const matchSearch = !query || 
                           m.name.toLowerCase().includes(query) || 
                           !!m.matchSnippet ||
-                          Object.values(m.speakers).some(s => s.name.toLowerCase().includes(query));
+                          Object.values(m.speakers).some((s: Speaker) => s.name.toLowerCase().includes(query));
 
       return matchFolder && matchSearch;
     });
@@ -212,6 +213,7 @@ const AppContent = () => {
         deviceFiles={deviceFiles}
         deviceStatus={deviceStatus}
         transferProgress={transferProgress}
+        transferTime={transferTime}
         onToggleHardwareFile={toggleFileSelection}
         onSyncHardware={handleSync}
         onCloseHardwareModal={closeSyncModal}

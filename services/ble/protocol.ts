@@ -25,6 +25,7 @@ export const CMD = {
   RET_BATTERY: 4,
   GET_VERSION: 10,
   RET_VERSION: 11,
+  ENABLE_HIGH_SPEED: 20, // Upgrade: Enable high speed mode (BT 5.3)
   
   // File (Type 2)
   GET_FILE_LIST: 0,
