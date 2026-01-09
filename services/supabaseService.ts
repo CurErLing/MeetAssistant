@@ -27,6 +27,7 @@ export const supabaseService = {
     const userId = userProfile.id;
 
     const audioPath = `${userId}/${meeting.id}.${meeting.format}`; 
+    // This will now throw if upload fails, allowing catch block in store to handle it
     const uploadedPath = await this.uploadAudio(audioBlob, audioPath);
 
     const row = {
@@ -50,7 +51,8 @@ export const supabaseService = {
 
     const { error } = await supabase.from('meetings').insert(row);
     if (error) {
-      console.error('Error creating meeting:', JSON.stringify(error, null, 2));
+      // Use console.error directly with the object to avoid {} output from JSON.stringify(Error)
+      console.error('Error creating meeting:', error);
       throw error;
     }
   },

@@ -58,7 +58,9 @@ export const useAppStore = () => {
   const createMeeting = async (file: File, trimStart = 0, trimEnd = 0, source: 'upload' | 'recording' | 'hardware' = 'upload') => {
     let fileToProcess = file;
     
-    if (trimStart > 0 || (trimEnd > 0 && trimEnd < file.size)) {
+    // Only slice if user actually adjusted the trim handles
+    // Fixed bug: trimEnd < file.size was comparing seconds to bytes
+    if (trimStart > 0 || trimEnd > 0) {
       try {
         fileToProcess = await sliceAudio(file, trimStart, trimEnd);
       } catch (error) {
@@ -71,6 +73,7 @@ export const useAppStore = () => {
     else if (source === 'recording') idPrefix = 'rec_';
     const id = `${idPrefix}${Date.now()}`;
     
+    // 临时 URL 用于 UI 立即显示
     const url = URL.createObjectURL(fileToProcess);
     
     let duration = 0;
@@ -96,15 +99,24 @@ export const useAppStore = () => {
       transcript: []
     };
     
+    // 1. UI 立即更新
     setMeetings(prev => [newMeeting, ...prev]);
     if (selectedFolderId) {
       setFolders(prev => prev.map(f => f.id === selectedFolderId ? { ...f, meetingIds: [...f.meetingIds, id] } : f));
     }
 
+    // 2. 后台上传并创建
     try {
+      // Supabase Upload
+      await supabaseService.createMeeting(newMeeting, fileToProcess);
+
+      // Gemini Transcribe
       const transcript = await transcribeAudio(fileToProcess);
+      
+      // Auto-populate speakers
       const speakers = generateSpeakersFromTranscript(transcript);
 
+      // Update Meeting with result
       const updates = { 
         status: 'ready' as const, 
         transcript,
@@ -119,6 +131,10 @@ export const useAppStore = () => {
       console.error("Processing failed:", error);
       const updates = { status: 'error' as const };
       setMeetings(prev => prev.map(m => m.id === id ? { ...m, ...updates } : m));
+      // Don't update DB status here if the meeting creation itself failed (e.g. upload failed)
+      if (error.message !== "Audio upload failed") {
+         // supabaseService.updateMeeting(id, updates);
+      }
    }
   };
 

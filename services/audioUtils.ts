@@ -127,7 +127,7 @@ export const sliceAudio = async (file: File, start: number, end: number): Promis
     const safeStart = Math.max(0, start);
     const safeEnd = (end > 0 && end < duration) ? end : duration;
     
-    // Optimization: If the requested range covers almost the entire file, return original.
+    // Optimization: If the requested range covers almost the entire file (within 0.1s tolerance), return original.
     // This prevents re-encoding compressed files (MP3) into WAV, which avoids file size explosion.
     if (safeStart <= 0.1 && safeEnd >= duration - 0.1) {
       return file;

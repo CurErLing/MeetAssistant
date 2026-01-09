@@ -117,6 +117,7 @@ class BluetoothService {
   private writeChar: BluetoothRemoteGATTCharacteristic | null = null;
   
   private seq = 0;
+  private ackCounter = 0; // For ACK frequency reduction
   private connectionState: ConnectionState = 'idle';
   private stateListeners: ((state: ConnectionState) => void)[] = [];
   
@@ -199,6 +200,7 @@ class BluetoothService {
       this.incomingQueue = [];
       this.isProcessingQueue = false;
       this.seq = 0;
+      this.ackCounter = 0;
 
       this.setState('connected');
 
@@ -240,20 +242,16 @@ class BluetoothService {
     }
   }
 
-  private async sendConfirmation(packet: Packet) {
+  // Optimized ACK sending: Non-blocking fire-and-forget
+  private sendAck(seq: number, type: number, cmd: number) {
     if (!this.writeChar) return;
-    if (packet.payload.length < 2) return;
-
-    const type = packet.payload[0];
-    const cmd = packet.payload[1];
     
-    const ackData = buildPacket(packet.seq, type, cmd, null);
+    // Echo back the received seq as confirmation (Protocol specific)
+    const ackData = buildPacket(seq, type, cmd, null);
     
-    try {
-      await this.writeChar.writeValueWithoutResponse(ackData);
-    } catch (e) {
+    this.writeChar.writeValueWithoutResponse(ackData).catch(e => {
       console.warn("ACK write failed", e);
-    }
+    });
   }
 
   public async getDeviceInfo() {
@@ -308,6 +306,7 @@ class BluetoothService {
     this.onFileDownloadError = onError;
     this.lastProgressUpdate = 0;
     this.lastProgressValue = 0;
+    this.ackCounter = 0;
     
     this.setState('syncing');
     
@@ -480,8 +479,9 @@ class BluetoothService {
       if (offset === len) {
         this.processingBuffer = new Uint8Array(0);
       } else {
-        // Slice creates a copy, allowing old large buffer to be GC'ed
-        this.processingBuffer = buffer.slice(offset);
+        // Optimization: Use subarray to avoid expensive copying. 
+        // The actual copy will happen during concatenation in the next processQueue cycle.
+        this.processingBuffer = buffer.subarray(offset);
       }
     }
   }
@@ -532,7 +532,7 @@ class BluetoothService {
         if (offset === len) {
             this.statusBuffer = new Uint8Array(0);
         } else {
-            this.statusBuffer = buffer.slice(offset);
+            this.statusBuffer = buffer.subarray(offset); // Use subarray
         }
     }
   }
@@ -547,7 +547,8 @@ class BluetoothService {
     if (type === DATA_TYPES.CONTROL) {
        this.handleControlCommand(cmd, data);
     } else if (type === DATA_TYPES.FILE_TRANSFER) {
-       await this.handleFileCommand(cmd, data);
+       // Pass seq to file command handler for potential ACK
+       await this.handleFileCommand(cmd, data, packet.seq);
     }
   }
 
@@ -578,17 +579,18 @@ class BluetoothService {
     }
   }
 
-  private async handleFileCommand(cmd: number, data: Uint8Array) {
+  private async handleFileCommand(cmd: number, data: Uint8Array, seq: number) {
     if (cmd === CMD.START_IMPORT_FILE) {
         console.log("Device started sending file data.");
-        this.resetDownloadWatchdog(); 
+        this.resetDownloadWatchdog();
+        this.ackCounter = 0; // Reset ACK counter
     } else if (cmd === CMD.RET_FILE_LIST) {
       if (data.length >= 4) {
          this.processListStream(data.slice(4));
       }
     } else if (cmd === CMD.FILE_DATA) {
       if (this.currentDownloadFile) {
-         this.handleFileData(data);
+         this.handleFileData(data, seq);
       } else if (this.isFetchingList) {
          this.processListStream(data);
       }
@@ -695,12 +697,18 @@ class BluetoothService {
     }
   }
 
-  private handleFileData(data: Uint8Array) {
+  private handleFileData(data: Uint8Array, seq: number) {
     if (this.currentDownloadFile) {
       this.resetDownloadWatchdog(); 
       this.currentDownloadFile.data.push(data);
       this.currentDownloadFile.receivedSize += data.length;
       
+      // ACK Frequency Reduction: Send ACK every 20 packets
+      this.ackCounter++;
+      if (this.ackCounter % 20 === 0) {
+         this.sendAck(seq, DATA_TYPES.FILE_TRANSFER, CMD.FILE_DATA);
+      }
+
       if (this.onFileChunkReceived) {
         // UI Optimization: Throttle progress updates to avoid blocking the main thread
         // Only update if 1% changed OR 200ms passed
@@ -767,9 +775,9 @@ class BluetoothService {
          file = new File([blob], fileName, { type: mimeType });
       } else if (mimeType === 'audio/ogg' || mimeType === 'audio/webm' || fileName.endsWith('.opus') || fileName.endsWith('.webm')) {
          console.log(`Converting Opus/WebM chunks (${this.currentDownloadFile.data.length}) to WAV...`);
-         file = await convertToWav(this.currentDownloadFile.data);
+         const wavBlob = await convertToWav(this.currentDownloadFile.data);
          const newName = fileName.replace(/\.[^/.]+$/, "") + ".wav";
-         file = new File([file], newName, { type: 'audio/wav' });
+         file = new File([wavBlob], newName, { type: 'audio/wav' });
       } else {
          const totalSize = this.currentDownloadFile.data.reduce((acc, chunk) => acc + chunk.length, 0);
          const combinedData = new Uint8Array(totalSize);
