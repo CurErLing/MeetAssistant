@@ -263,9 +263,6 @@ const AppContent = () => {
            toast.success("文件夹已删除");
         }}
         onShareFolder={handleShareFolder}
-        teamId={store.teamId}
-        teamName={store.teamName} // Pass teamName
-        onSwitchTeam={store.joinTeam}
         onProfileClick={() => {
           store.setSearchQuery(""); // Reset search when going to profile
           store.setView('profile');
@@ -492,9 +489,6 @@ const AppContent = () => {
             <ProfileView 
               userId={store.userId || ''}
               userName={store.userName}
-              teamId={store.teamId}
-              teamName={store.teamName} // Pass teamName
-              onSwitchTeam={store.joinTeam}
               onUpdateName={(name) => {
                  store.updateUserName(name);
                  toast.success("昵称修改成功");

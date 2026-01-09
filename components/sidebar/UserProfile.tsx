@@ -4,16 +4,12 @@ import { User, ShieldCheck } from 'lucide-react';
 
 interface UserProfileProps {
   name: string;
-  role: string;
-  teamId?: string;
   onProfileClick?: () => void;
-  onSwitchTeam?: (id: string) => void;
   onLogout?: () => void;
 }
 
 export const UserProfile: React.FC<UserProfileProps> = ({ 
   name, 
-  role, 
   onProfileClick
 }) => {
   return (
@@ -32,7 +28,7 @@ export const UserProfile: React.FC<UserProfileProps> = ({
             <ShieldCheck size={12} className="text-blue-500" />
           </div>
           <div className="text-xs text-blue-600 font-medium truncate bg-blue-50 px-2 py-0.5 rounded-md inline-block mt-1">
-             {role}
+             个人账号
           </div>
         </div>
       </div>

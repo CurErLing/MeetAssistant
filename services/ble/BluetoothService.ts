@@ -416,66 +416,125 @@ class BluetoothService {
     return newBuffer;
   }
 
+  // Optimized loop with offset instead of slicing
   private async processBufferLoop() {
-    let buffer = this.processingBuffer;
+    const buffer = this.processingBuffer;
+    let offset = 0;
+    const len = buffer.length;
     
-    while (buffer.length >= 6) {
-      if (buffer[0] !== 0x5A) {
-        // Find next 0x5A
-        let start = 1;
-        while (start < buffer.length && buffer[start] !== 0x5A) {
-          start++;
+    // Header size is 6 bytes
+    while (len - offset >= 6) {
+      // 1. Sync Byte Check
+      if (buffer[offset] !== 0x5A) {
+        // Search for next 0x5A to recover sync
+        let found = false;
+        for (let i = offset + 1; i < len; i++) {
+            if (buffer[i] === 0x5A) {
+                offset = i;
+                found = true;
+                break;
+            }
         }
-        buffer = buffer.slice(start);
+        if (!found) {
+            // No more sync bytes, discard all up to end
+            offset = len; 
+            break;
+        }
         continue;
       }
 
-      const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-      const dataLen = view.getUint16(4, true); 
+      // 2. Length Check
+      // Length is at offset + 4 (2 bytes, little endian)
+      if (len - offset < 6) break;
+
+      const dataLen = buffer[offset + 4] | (buffer[offset + 5] << 8);
       const totalPacketLen = 6 + dataLen;
 
-      if (buffer.length < totalPacketLen) {
-        break; // Wait for more data
+      if (len - offset < totalPacketLen) {
+        // Not enough data yet
+        break;
       }
 
-      const packetBytes = buffer.slice(0, totalPacketLen);
-      const packet = parsePacket(new DataView(packetBytes.buffer));
+      // 3. Parse Packet
+      const packetView = new DataView(buffer.buffer, buffer.byteOffset + offset, totalPacketLen);
+      const packet = parsePacket(packetView);
 
       if (packet) {
+        // CRITICAL: Copy payload to detach from the large processing buffer
+        // This prevents the small packet view from keeping the large accumulated buffer in memory
+        packet.payload = new Uint8Array(packet.payload);
+        
         await this.handlePacket(packet);
       } else {
+        // Invalid CRC, skip one byte to try re-syncing
         console.warn("Invalid CRC packet skipped");
+        offset++;
+        continue;
       }
 
-      buffer = buffer.slice(totalPacketLen);
+      offset += totalPacketLen;
     }
     
-    this.processingBuffer = buffer;
+    // Consolidate remainder
+    if (offset > 0) {
+      if (offset === len) {
+        this.processingBuffer = new Uint8Array(0);
+      } else {
+        // Slice creates a copy, allowing old large buffer to be GC'ed
+        this.processingBuffer = buffer.slice(offset);
+      }
+    }
   }
 
+  // Optimized loop for status buffer
   private async processStatusBuffer() {
-    // Similar logic for status buffer, simplified as status packets are rare
-    let buffer = this.statusBuffer;
-    while (buffer.length >= 6) {
-        if (buffer[0] !== 0x5A) {
-            let start = 1;
-            while (start < buffer.length && buffer[start] !== 0x5A) start++;
-            buffer = buffer.slice(start);
+    const buffer = this.statusBuffer;
+    let offset = 0;
+    const len = buffer.length;
+
+    while (len - offset >= 6) {
+        if (buffer[offset] !== 0x5A) {
+            let found = false;
+            for (let i = offset + 1; i < len; i++) {
+                if (buffer[i] === 0x5A) {
+                    offset = i;
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                offset = len;
+                break;
+            }
             continue;
         }
-        const view = new DataView(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-        const dataLen = view.getUint16(4, true);
-        const totalPacketLen = 6 + dataLen;
-        if (buffer.length < totalPacketLen) break;
 
-        const packetBytes = buffer.slice(0, totalPacketLen);
-        const packet = parsePacket(new DataView(packetBytes.buffer));
+        if (len - offset < 6) break;
+        const dataLen = buffer[offset + 4] | (buffer[offset + 5] << 8);
+        const totalPacketLen = 6 + dataLen;
+
+        if (len - offset < totalPacketLen) break;
+
+        const packetView = new DataView(buffer.buffer, buffer.byteOffset + offset, totalPacketLen);
+        const packet = parsePacket(packetView);
+        
         if (packet) {
+            packet.payload = new Uint8Array(packet.payload);
             await this.handlePacket(packet);
+        } else {
+            offset++;
+            continue;
         }
-        buffer = buffer.slice(totalPacketLen);
+        offset += totalPacketLen;
     }
-    this.statusBuffer = buffer;
+
+    if (offset > 0) {
+        if (offset === len) {
+            this.statusBuffer = new Uint8Array(0);
+        } else {
+            this.statusBuffer = buffer.slice(offset);
+        }
+    }
   }
 
   private async handlePacket(packet: Packet) {
@@ -484,9 +543,6 @@ class BluetoothService {
     const type = packet.payload[0];
     const cmd = packet.payload[1];
     const data = packet.payload.subarray(2);
-
-    // OPTIMIZATION: Do NOT send ACK for file transfer packets (Type 2)
-    // Only ack control packets if needed (Firmware dependent, assuming control doesn't need ack for notifications)
 
     if (type === DATA_TYPES.CONTROL) {
        this.handleControlCommand(cmd, data);

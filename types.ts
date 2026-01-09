@@ -27,16 +27,6 @@ export interface UserProfile {
   id: string;
   name: string;
   phone?: string;
-  currentTeamId?: string;
-}
-
-/**
- * 团队信息 (对应数据库 teams 表)
- */
-export interface Team {
-  id: string;
-  name: string;
-  createdBy: string;
 }
 
 /**
